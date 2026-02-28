@@ -28,6 +28,7 @@
 #include <QGraphicsLineItem>
 #include <QMouseEvent>
 #include <QWheelEvent>
+#include <QSlider>
 
 #include <opencv2/opencv.hpp>
 #include "Core.h"
@@ -104,6 +105,7 @@ private slots:
   void onZoomOut();
   void onResetView();
   void onClearAnnotations();
+  void onProgressSliderReleased();
 
   // Calibration actions
   void onGrabFrame();
@@ -141,6 +143,7 @@ private:
   void stopCaptureBlocking();
   void updatePlaybackParams();
   void stepAllVideos(int delta);
+  void updateProgressUI(int64_t frame, int64_t endFrame);
   int videoSourceCount() const;
   void setSourceEnabled(int idx, bool enabled);
   bool readFrames(std::vector<cv::Mat>& frames);
@@ -229,6 +232,8 @@ private:
   QPushButton* btnResetView_=nullptr;
   QPushButton* btnClearAnno_=nullptr;
   QLabel* lblLineState_=nullptr;
+  QSlider* progressSlider_=nullptr;
+  QLabel* lblProgress_=nullptr;
   //QCheckBox* chkSyncPlay_=nullptr;
   //QLabel* lblPlayState_=nullptr;
   QPushButton* btnSaveProject_=nullptr;

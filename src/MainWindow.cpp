@@ -270,6 +270,18 @@ void MainWindow::buildUI() {
     playbar->addWidget(lblLineState_, 1);
     v->addLayout(playbar);
 
+    QHBoxLayout* progressRow = new QHBoxLayout();
+    progressRow->addWidget(new QLabel("Progress", central));
+    progressSlider_ = new QSlider(Qt::Horizontal, central);
+    progressSlider_->setRange(0, 0);
+    progressSlider_->setSingleStep(1);
+    progressSlider_->setPageStep(30);
+    lblProgress_ = new QLabel("0 / 0", central);
+    lblProgress_->setMinimumWidth(110);
+    progressRow->addWidget(progressSlider_, 1);
+    progressRow->addWidget(lblProgress_);
+    v->addLayout(progressRow);
+
     QHBoxLayout* pbtns = new QHBoxLayout();
     btnSaveProject_ = new QPushButton("Save Project", central);
     btnLoadProject_ = new QPushButton("Load Project", central);
@@ -295,6 +307,7 @@ void MainWindow::buildUI() {
     connect(btnZoomOut_, &QPushButton::clicked, this, &MainWindow::onZoomOut);
     connect(btnResetView_, &QPushButton::clicked, this, &MainWindow::onResetView);
     connect(btnClearAnno_, &QPushButton::clicked, this, &MainWindow::onClearAnnotations);
+    connect(progressSlider_, &QSlider::sliderReleased, this, &MainWindow::onProgressSliderReleased);
     connect(viewer_, &ImageViewer::linePreviewText, lblLineState_, &QLabel::setText);
     connect(btnSaveProject_, &QPushButton::clicked, this, &MainWindow::onSaveProject);
     connect(btnLoadProject_, &QPushButton::clicked, this, &MainWindow::onLoadProject);
@@ -1098,6 +1111,23 @@ void MainWindow::onFramesFromWorker(FramePack frames, qint64 capture_ts_ms) {
     QMutexLocker locker(&frames_mutex_);
     last_frames_ = std::move(frames); // cv::Mat ref-counted
   }
+
+  int64_t framePos = play_frame_;
+  int64_t frameEnd = play_end_frame_;
+  {
+    QMutexLocker srcLock(&sources_mutex_);
+    for (const auto& s : sources_) {
+      if (s.is_cam || !s.cap.isOpened()) continue;
+      framePos = std::max<int64_t>(0, (int64_t)std::llround(s.cap.get(cv::CAP_PROP_POS_FRAMES)) - 1);
+      double fc = s.cap.get(cv::CAP_PROP_FRAME_COUNT);
+      if (frameEnd <= 0 && fc > 0) frameEnd = (int64_t)fc;
+      break;
+    }
+  }
+  play_frame_ = framePos;
+  if (play_end_frame_ <= 0 && frameEnd > 0) play_end_frame_ = frameEnd;
+  updateProgressUI(play_frame_, play_end_frame_);
+
   // forward to solver thread (queued)
   if (solveWorker_) {
     // handled via signal/slot wiring in constructor
@@ -1203,6 +1233,7 @@ void MainWindow::updatePlaybackParams() {
     int64_t minFrames = (int64_t)9e18;
     double fps = 0.0;
     bool found=false;
+    QMutexLocker srcLock(&sources_mutex_);
     for (auto& s : sources_) {
       if (s.is_cam) continue;
       if (!s.cap.isOpened()) continue;
@@ -1220,31 +1251,69 @@ void MainWindow::updatePlaybackParams() {
     play_fps_ = (fps > 0.0 ? fps : 30.0);
     QMetaObject::invokeMethod(captureWorker_, "setPlaybackRangeSlot", Qt::BlockingQueuedConnection,
                               Q_ARG(qint64, (qint64)0), Q_ARG(qint64, (qint64)play_end_frame_), Q_ARG(double, play_fps_));
+  } else {
+    int64_t maxFrames = 0;
+    QMutexLocker srcLock(&sources_mutex_);
+    for (const auto& s : sources_) {
+      if (s.is_cam || !s.cap.isOpened()) continue;
+      double fc = s.cap.get(cv::CAP_PROP_FRAME_COUNT);
+      if (fc > 0) maxFrames = std::max<int64_t>(maxFrames, (int64_t)fc);
+    }
+    play_end_frame_ = maxFrames;
   }
+  updateProgressUI(play_frame_, play_end_frame_);
 }
 
+
+void MainWindow::updateProgressUI(int64_t frame, int64_t endFrame) {
+  if (!progressSlider_ || !lblProgress_) return;
+  int maxVal = (int)std::max<int64_t>(0, endFrame > 0 ? (endFrame - 1) : 0);
+  int val = (int)std::max<int64_t>(0, std::min<int64_t>(frame, maxVal));
+  progressSlider_->setRange(0, maxVal);
+  progressSlider_->blockSignals(true);
+  progressSlider_->setValue(val);
+  progressSlider_->blockSignals(false);
+  lblProgress_->setText(QString("%1 / %2").arg(val).arg(maxVal));
+}
 
 
 void MainWindow::stepAllVideos(int delta) {
   stopCaptureBlocking();
   playback_running_ = false;
   bool stepped = false;
-  QMutexLocker lock(&frames_mutex_);
-  if ((int)last_frames_.size() != (int)sources_.size()) last_frames_.resize(sources_.size());
-  for (int i=0;i<(int)sources_.size();++i) {
-    auto& src = sources_[i];
-    if (src.is_cam || !src.cap.isOpened()) continue;
-    double cur = src.cap.get(cv::CAP_PROP_POS_FRAMES);
-    int64_t target = std::max<int64_t>(0, (int64_t)std::llround(cur) + delta);
-    src.cap.set(cv::CAP_PROP_POS_FRAMES, (double)target);
-    cv::Mat f;
-    src.cap.read(f);
-    if (!f.empty()) {
-      last_frames_[i] = f;
-      stepped = true;
+  int64_t progressFrame = play_frame_;
+  std::vector<cv::Mat> steppedFrames;
+
+  {
+    QMutexLocker srcLock(&sources_mutex_);
+    steppedFrames.resize(sources_.size());
+    for (int i=0;i<(int)sources_.size();++i) {
+      auto& src = sources_[i];
+      if (src.is_cam || !src.cap.isOpened()) continue;
+      double cur = src.cap.get(cv::CAP_PROP_POS_FRAMES);
+      int64_t target = std::max<int64_t>(0, (int64_t)std::llround(cur) + delta);
+      if (play_end_frame_ > 0) target = std::min<int64_t>(target, play_end_frame_-1);
+      src.cap.set(cv::CAP_PROP_POS_FRAMES, (double)target);
+      cv::Mat f;
+      src.cap.read(f);
+      if (!f.empty()) {
+        steppedFrames[i] = f;
+        progressFrame = target;
+        stepped = true;
+      }
     }
   }
+
   if (stepped) {
+    {
+      QMutexLocker frameLock(&frames_mutex_);
+      if ((int)last_frames_.size() != (int)steppedFrames.size()) last_frames_.resize(steppedFrames.size());
+      for (int i=0;i<(int)steppedFrames.size();++i) {
+        if (!steppedFrames[i].empty()) last_frames_[i] = steppedFrames[i];
+      }
+    }
+    play_frame_ = progressFrame;
+    updateProgressUI(play_frame_, play_end_frame_);
     logLine(QString("Step frame: %1").arg(delta > 0 ? "next" : "prev"));
   } else {
     logLine("Step frame ignored: no video source ready.");
@@ -1280,6 +1349,20 @@ void MainWindow::onZoomOut() { if (viewer_) viewer_->zoomOut(); }
 void MainWindow::onResetView() { if (viewer_) viewer_->resetView(); }
 void MainWindow::onClearAnnotations() { if (viewer_) viewer_->clearAnnotations(); }
 
+void MainWindow::onProgressSliderReleased() {
+  if (!progressSlider_) return;
+  int target = progressSlider_->value();
+  {
+    QMutexLocker srcLock(&sources_mutex_);
+    for (auto& src : sources_) {
+      if (src.is_cam || !src.cap.isOpened()) continue;
+      src.cap.set(cv::CAP_PROP_POS_FRAMES, (double)target);
+    }
+  }
+  play_frame_ = target;
+  stepAllVideos(0);
+}
+
 void MainWindow::onPlayAll() {
   // Requirement: import video does NOT auto-play; start only when >=2 videos or user presses Play
   int vidN = videoSourceCount();
@@ -1290,18 +1373,22 @@ void MainWindow::onPlayAll() {
 
   stopCaptureBlocking();
 
-  // Enable all video sources for playback
-  for (int i=0;i<(int)sources_.size();++i) if (!sources_[i].is_cam) source_enabled_[i]=true;
+  {
+    QMutexLocker srcLock(&sources_mutex_);
+    // Enable all video sources for playback
+    for (int i=0;i<(int)sources_.size();++i) if (!sources_[i].is_cam) source_enabled_[i]=true;
 
-  // Rewind all videos to frame 0 for perfect sync
-  for (auto& s : sources_) {
-    if (s.is_cam) continue;
-    if (s.cap.isOpened()) {
-      s.cap.set(cv::CAP_PROP_POS_FRAMES, 0);
+    // Rewind all videos to frame 0 for perfect sync
+    for (auto& s : sources_) {
+      if (s.is_cam) continue;
+      if (s.cap.isOpened()) {
+        s.cap.set(cv::CAP_PROP_POS_FRAMES, 0);
+      }
     }
   }
   play_frame_ = 0;
   playback_running_ = true;
+  updateProgressUI(play_frame_, play_end_frame_);
   //if (lblPlayState_) 
   //    lblPlayState_->setText("State: PLAY (SYNC)");
 
@@ -1313,4 +1400,5 @@ void MainWindow::onStopAll() {
   playback_running_ = false;
   //if (lblPlayState_) lblPlayState_->setText("State: STOP");
   stopCaptureBlocking();
+  updateProgressUI(play_frame_, play_end_frame_);
 }
