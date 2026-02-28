@@ -22,6 +22,12 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QFile>
+#include <QGraphicsView>
+#include <QGraphicsScene>
+#include <QGraphicsPixmapItem>
+#include <QGraphicsLineItem>
+#include <QMouseEvent>
+#include <QWheelEvent>
 
 #include <opencv2/opencv.hpp>
 #include "Core.h"
@@ -38,6 +44,38 @@ struct InputSource {
 
 class CaptureWorker;
 class SolveWorker;
+
+class ImageViewer : public QGraphicsView {
+  Q_OBJECT
+public:
+  enum ToolMode { PanTool=0, PointTool=1, LineTool=2 };
+  explicit ImageViewer(QWidget* parent=nullptr);
+  void setImage(const QImage& img);
+  void setToolMode(ToolMode mode);
+  void zoomIn();
+  void zoomOut();
+  void resetView();
+  void clearAnnotations();
+
+signals:
+  void linePreviewText(const QString& text);
+
+protected:
+  void wheelEvent(QWheelEvent* e) override;
+  void mousePressEvent(QMouseEvent* e) override;
+  void mouseMoveEvent(QMouseEvent* e) override;
+
+private:
+  void applyZoom(double factor);
+
+  QGraphicsScene scene_;
+  QGraphicsPixmapItem* pixmapItem_ = nullptr;
+  ToolMode toolMode_ = PanTool;
+  double zoomFactor_ = 1.0;
+  bool lineDrawing_ = false;
+  QPointF lineStart_;
+  QGraphicsLineItem* previewLine_ = nullptr;
+};
 
 class MainWindow : public QMainWindow {
   Q_OBJECT
@@ -57,6 +95,15 @@ private slots:
   void onPauseResumeSelected();
   void onPlayAll();
   void onStopAll();
+  void onStepPrevFrame();
+  void onStepNextFrame();
+  void onToolPan();
+  void onToolPoint();
+  void onToolLine();
+  void onZoomIn();
+  void onZoomOut();
+  void onResetView();
+  void onClearAnnotations();
 
   // Calibration actions
   void onGrabFrame();
@@ -93,6 +140,7 @@ private:
   void updateSourceDocks(const std::vector<cv::Mat>& frames);
   void stopCaptureBlocking();
   void updatePlaybackParams();
+  void stepAllVideos(int delta);
   int videoSourceCount() const;
   void setSourceEnabled(int idx, bool enabled);
   bool readFrames(std::vector<cv::Mat>& frames);
@@ -146,7 +194,7 @@ private:
   enum Mode { CALIB=0, TRACK=1 } mode_=CALIB;
 
   // UI widgets
-  QLabel* viewLabel_=nullptr;
+  ImageViewer* viewer_=nullptr;
   QTextEdit* log_=nullptr;
 
   // Per-source dock views
@@ -164,19 +212,27 @@ private:
 
 
   // Sources panel
-  QListWidget* sourceList_=nullptr;
   QPushButton* btnAddCam_=nullptr;
   QPushButton* btnAddVideo_=nullptr;
   QPushButton* btnRemoveSource_=nullptr;
   QPushButton* btnPauseResume_=nullptr;
   QPushButton* btnPlayAll_=nullptr;
   QPushButton* btnStopAll_=nullptr;
+  QPushButton* btnStepPrev_=nullptr;
+  QPushButton* btnStepNext_=nullptr;
+
+  QPushButton* btnToolPan_=nullptr;
+  QPushButton* btnToolPoint_=nullptr;
+  QPushButton* btnToolLine_=nullptr;
+  QPushButton* btnZoomIn_=nullptr;
+  QPushButton* btnZoomOut_=nullptr;
+  QPushButton* btnResetView_=nullptr;
+  QPushButton* btnClearAnno_=nullptr;
+  QLabel* lblLineState_=nullptr;
   //QCheckBox* chkSyncPlay_=nullptr;
   //QLabel* lblPlayState_=nullptr;
   QPushButton* btnSaveProject_=nullptr;
   QPushButton* btnLoadProject_=nullptr;
-  QLabel* lblSources_=nullptr;
-
 
   QPushButton* btnModeCalib_=nullptr;
   QPushButton* btnModeTrack_=nullptr;

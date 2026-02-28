@@ -21,6 +21,122 @@ static QString nowStr() {
   return QDateTime::currentDateTime().toString("hh:mm:ss");
 }
 
+
+ImageViewer::ImageViewer(QWidget* parent) : QGraphicsView(parent) {
+  setScene(&scene_);
+  setRenderHint(QPainter::Antialiasing, true);
+  setBackgroundBrush(QColor(17,17,17));
+  setFrameShape(QFrame::StyledPanel);
+  setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
+  setResizeAnchor(QGraphicsView::AnchorViewCenter);
+  setDragMode(QGraphicsView::ScrollHandDrag);
+  pixmapItem_ = scene_.addPixmap(QPixmap());
+}
+
+void ImageViewer::setImage(const QImage& img) {
+  if (img.isNull()) {
+    pixmapItem_->setPixmap(QPixmap());
+    return;
+  }
+  pixmapItem_->setPixmap(QPixmap::fromImage(img));
+  scene_.setSceneRect(pixmapItem_->boundingRect());
+  if (zoomFactor_ == 1.0 && transform().isIdentity()) {
+    fitInView(pixmapItem_, Qt::KeepAspectRatio);
+  }
+}
+
+void ImageViewer::setToolMode(ToolMode mode) {
+  toolMode_ = mode;
+  if (toolMode_ == PanTool) {
+    setCursor(Qt::OpenHandCursor);
+    setDragMode(QGraphicsView::ScrollHandDrag);
+  } else {
+    setCursor(Qt::CrossCursor);
+    setDragMode(QGraphicsView::NoDrag);
+  }
+  if (!lineDrawing_ && previewLine_) {
+    scene_.removeItem(previewLine_);
+    delete previewLine_;
+    previewLine_ = nullptr;
+  }
+}
+
+void ImageViewer::zoomIn() { applyZoom(1.15); }
+void ImageViewer::zoomOut() { applyZoom(1.0/1.15); }
+
+void ImageViewer::resetView() {
+  resetTransform();
+  zoomFactor_ = 1.0;
+  if (!pixmapItem_->pixmap().isNull()) fitInView(pixmapItem_, Qt::KeepAspectRatio);
+}
+
+void ImageViewer::clearAnnotations() {
+  const auto items = scene_.items();
+  for (auto* it : items) {
+    if (it == pixmapItem_) continue;
+    scene_.removeItem(it);
+    delete it;
+  }
+  previewLine_ = nullptr;
+  lineDrawing_ = false;
+  emit linePreviewText("Line: idle");
+}
+
+void ImageViewer::applyZoom(double factor) {
+  zoomFactor_ *= factor;
+  zoomFactor_ = std::max(0.1, std::min(zoomFactor_, 20.0));
+  scale(factor, factor);
+}
+
+void ImageViewer::wheelEvent(QWheelEvent* e) {
+  if (e->angleDelta().y() > 0) zoomIn();
+  else zoomOut();
+}
+
+void ImageViewer::mousePressEvent(QMouseEvent* e) {
+  if (toolMode_ == PanTool) {
+    QGraphicsView::mousePressEvent(e);
+    return;
+  }
+  if (e->button() != Qt::LeftButton || pixmapItem_->pixmap().isNull()) return;
+
+  QPointF p = mapToScene(e->pos());
+  if (!sceneRect().contains(p)) return;
+
+  if (toolMode_ == PointTool) {
+    scene_.addEllipse(p.x()-3, p.y()-3, 6, 6, QPen(QColor(255,80,80), 2), QBrush(QColor(255,80,80)));
+    return;
+  }
+
+  if (toolMode_ == LineTool) {
+    if (!lineDrawing_) {
+      lineDrawing_ = true;
+      lineStart_ = p;
+      previewLine_ = scene_.addLine(QLineF(lineStart_, lineStart_), QPen(QColor(80,220,255), 2));
+      emit linePreviewText("Line: start");
+    } else {
+      scene_.addLine(QLineF(lineStart_, p), QPen(QColor(80,220,255), 2));
+      if (previewLine_) {
+        scene_.removeItem(previewLine_);
+        delete previewLine_;
+        previewLine_ = nullptr;
+      }
+      lineDrawing_ = false;
+      emit linePreviewText(QString("Line: done len=%1 px").arg(QLineF(lineStart_, p).length(), 0, 'f', 1));
+    }
+  }
+}
+
+void ImageViewer::mouseMoveEvent(QMouseEvent* e) {
+  if (toolMode_ == LineTool && lineDrawing_ && previewLine_) {
+    QPointF p = mapToScene(e->pos());
+    previewLine_->setLine(QLineF(lineStart_, p));
+    emit linePreviewText(QString("Line: drawing len=%1 px").arg(QLineF(lineStart_, p).length(), 0, 'f', 1));
+    return;
+  }
+  QGraphicsView::mouseMoveEvent(e);
+}
+
 MainWindow::MainWindow(const std::vector<InputSource>& sources,
                        int board_w, int board_h, double square_m,
                        QWidget* parent)
@@ -107,58 +223,62 @@ void MainWindow::buildUI() {
     connect(btnModeCalib_, &QPushButton::clicked, this, &MainWindow::onModeCalibration);
     connect(btnModeTrack_, &QPushButton::clicked, this, &MainWindow::onModeTracking);
 
-    viewLabel_ = new QLabel(this);
-    viewLabel_->setMinimumSize(960, 540);
-    viewLabel_->setAlignment(Qt::AlignCenter);
-    viewLabel_->setStyleSheet("background-color: #111; border: 1px solid #333;");
-    v->addWidget(viewLabel_, 1);
+    viewer_ = new ImageViewer(this);
+    viewer_->setMinimumSize(960, 540);
+    v->addWidget(viewer_, 1);
 
-    setCentralWidget(central);
+    QHBoxLayout* playbar = new QHBoxLayout();
+    btnAddCam_ = new QPushButton("AddCamera", central);
+    btnAddVideo_ = new QPushButton("AddVideo", central);
+    btnRemoveSource_ = new QPushButton("Remove", central);
+    btnPauseResume_ = new QPushButton("Pause/Resume", central);
+    btnPlayAll_ = new QPushButton("Play", central);
+    btnStopAll_ = new QPushButton("Stop", central);
+    btnStepPrev_ = new QPushButton("Prev Frame", central);
+    btnStepNext_ = new QPushButton("Next Frame", central);
 
-    // Left dock: Sources
-    QDockWidget* dockSources = new QDockWidget("Sources", this);
-    dockSources->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    QWidget* sw = new QWidget(dockSources);
-    QVBoxLayout* sv = new QVBoxLayout(sw);
+    btnToolPan_ = new QPushButton("Pan", central);
+    btnToolPoint_ = new QPushButton("Draw Point", central);
+    btnToolLine_ = new QPushButton("Draw Line", central);
+    btnZoomIn_ = new QPushButton("Zoom +", central);
+    btnZoomOut_ = new QPushButton("Zoom -", central);
+    btnResetView_ = new QPushButton("Reset View", central);
+    btnClearAnno_ = new QPushButton("Clear Drawings", central);
+    lblLineState_ = new QLabel("Line: idle", central);
 
-    lblSources_ = new QLabel(sw);
-    sourceList_ = new QListWidget(sw);
-    sourceList_->setUniformItemSizes(true);
-    sourceList_->setWordWrap(false);
-    sourceList_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    sourceList_->setSelectionMode(QAbstractItemView::SingleSelection);
+    btnToolPan_->setCheckable(true);
+    btnToolPoint_->setCheckable(true);
+    btnToolLine_->setCheckable(true);
+    btnToolPan_->setChecked(true);
 
-    QHBoxLayout* sbtns = new QHBoxLayout();
-    btnAddCam_ = new QPushButton("AddCamera", sw);
-    btnAddVideo_ = new QPushButton("AddVideo", sw);
-    btnRemoveSource_ = new QPushButton("Remove", sw);
-    btnPauseResume_ = new QPushButton("Pause/Resume", sw);
-    btnPlayAll_ = new QPushButton("Play", sw);
-    btnStopAll_ = new QPushButton("Stop", sw);
-   // chkSyncPlay_ = new QCheckBox("Sync frame index (videos)", sw);
-  //  chkSyncPlay_->setChecked(true);
-   // lblPlayState_ = new QLabel("State: STOP", sw);
-    sbtns->addWidget(btnAddCam_);
-    sbtns->addWidget(btnAddVideo_);
-    sbtns->addWidget(btnRemoveSource_);
-    sbtns->addWidget(btnPauseResume_);
-    sbtns->addWidget(btnPlayAll_);
-    sbtns->addWidget(btnStopAll_);
-    //sbtns->addWidget(chkSyncPlay_);
-   // sbtns->addWidget(lblPlayState_);
+    playbar->addWidget(btnAddCam_);
+    playbar->addWidget(btnAddVideo_);
+    playbar->addWidget(btnRemoveSource_);
+    playbar->addWidget(btnPauseResume_);
+    playbar->addWidget(btnPlayAll_);
+    playbar->addWidget(btnStopAll_);
+    playbar->addWidget(btnStepPrev_);
+    playbar->addWidget(btnStepNext_);
+    playbar->addSpacing(16);
+    playbar->addWidget(btnToolPan_);
+    playbar->addWidget(btnToolPoint_);
+    playbar->addWidget(btnToolLine_);
+    playbar->addWidget(btnZoomIn_);
+    playbar->addWidget(btnZoomOut_);
+    playbar->addWidget(btnResetView_);
+    playbar->addWidget(btnClearAnno_);
+    playbar->addWidget(lblLineState_, 1);
+    v->addLayout(playbar);
 
-    sv->addWidget(lblSources_);
-    sv->addWidget(sourceList_, 1);
     QHBoxLayout* pbtns = new QHBoxLayout();
-    btnSaveProject_ = new QPushButton("Save Project", sw);
-    btnLoadProject_ = new QPushButton("Load Project", sw);
+    btnSaveProject_ = new QPushButton("Save Project", central);
+    btnLoadProject_ = new QPushButton("Load Project", central);
     pbtns->addWidget(btnSaveProject_);
     pbtns->addWidget(btnLoadProject_);
-    sv->addLayout(sbtns);
-    sv->addLayout(pbtns);
-    sw->setLayout(sv);
-    dockSources->setWidget(sw);
-    addDockWidget(Qt::LeftDockWidgetArea, dockSources);
+    pbtns->addStretch(1);
+    v->addLayout(pbtns);
+
+    setCentralWidget(central);
 
     connect(btnAddCam_, &QPushButton::clicked, this, &MainWindow::onAddCamera);
     connect(btnAddVideo_, &QPushButton::clicked, this, &MainWindow::onAddVideo);
@@ -166,7 +286,16 @@ void MainWindow::buildUI() {
     connect(btnPauseResume_, &QPushButton::clicked, this, &MainWindow::onPauseResumeSelected);
     connect(btnPlayAll_, &QPushButton::clicked, this, &MainWindow::onPlayAll);
     connect(btnStopAll_, &QPushButton::clicked, this, &MainWindow::onStopAll);
-  //  connect(chkSyncPlay_, &QCheckBox::toggled, this, [this](bool on){ sync_play_=on; updatePlaybackParams(); });
+    connect(btnStepPrev_, &QPushButton::clicked, this, &MainWindow::onStepPrevFrame);
+    connect(btnStepNext_, &QPushButton::clicked, this, &MainWindow::onStepNextFrame);
+    connect(btnToolPan_, &QPushButton::clicked, this, &MainWindow::onToolPan);
+    connect(btnToolPoint_, &QPushButton::clicked, this, &MainWindow::onToolPoint);
+    connect(btnToolLine_, &QPushButton::clicked, this, &MainWindow::onToolLine);
+    connect(btnZoomIn_, &QPushButton::clicked, this, &MainWindow::onZoomIn);
+    connect(btnZoomOut_, &QPushButton::clicked, this, &MainWindow::onZoomOut);
+    connect(btnResetView_, &QPushButton::clicked, this, &MainWindow::onResetView);
+    connect(btnClearAnno_, &QPushButton::clicked, this, &MainWindow::onClearAnnotations);
+    connect(viewer_, &ImageViewer::linePreviewText, lblLineState_, &QLabel::setText);
     connect(btnSaveProject_, &QPushButton::clicked, this, &MainWindow::onSaveProject);
     connect(btnLoadProject_, &QPushButton::clicked, this, &MainWindow::onLoadProject);
 
@@ -333,19 +462,16 @@ void MainWindow::closeAllSources() {
 }
 
 void MainWindow::refreshSourceList() {
-  if (!sourceList_) return;
-  sourceList_->clear();
+  QStringList status;
   for (int i=0;i<(int)sources_.size();++i) {
     const auto& s = sources_[i];
     QString label = s.is_cam ? QString("Camera %1").arg(s.cam_id)
-                             : QString("Video: %1").arg(s.video_path);
+                             : QFileInfo(s.video_path).fileName();
     bool en = (i < (int)source_enabled_.size()) ? source_enabled_[i] : true;
-    label += en ? "  [RUN]" : "  [PAUSED]";
-    if (s.cap.isOpened()) label += "  [OPEN]";
-    else label += "  [CLOSED]";
-    sourceList_->addItem(label);
+    label += en ? "[RUN]" : "[PAUSED]";
+    status << label;
   }
-  lblSources_->setText(QString("Sources: %1").arg(sources_.size()));
+  if (!status.isEmpty()) statusBar()->showMessage(QString("Sources: %1").arg(status.join(" | ")));
 }
 
 void MainWindow::rebuildCalibratorFromUI(bool reset) {
@@ -452,7 +578,7 @@ void MainWindow::onAddVideo()
 }
 
 void MainWindow::onRemoveSource() {
-  int row = sourceList_ ? sourceList_->currentRow() : -1;
+  int row = (int)sources_.size() - 1;
   if (row < 0 || row >= (int)sources_.size()) return;
 
   timer_.stop();
@@ -615,7 +741,7 @@ void MainWindow::updateStatus() {
 void MainWindow::onTick() {
   // UI refresh at a steady rate; frames arrive from CaptureWorker
   if (sources_.empty()) {
-    viewLabel_->setText("No sources. Use Sources panel to add cameras/videos.");
+    if (viewer_) viewer_->setImage(QImage());
     updateStatus();
     return;
   }
@@ -649,8 +775,7 @@ void MainWindow::onTick() {
   cv::Mat mosaic = makeMosaic(vis, 2);
   if (!mosaic.empty()) {
     QImage img = matToQImage(mosaic);
-    viewLabel_->setPixmap(QPixmap::fromImage(img).scaled(
-      viewLabel_->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    if (viewer_) viewer_->setImage(img);
   }
 
   if (show_docks_) updateSourceDocks(frames);
@@ -899,11 +1024,12 @@ void MainWindow::onPrintPose() {
 
 // ----------------- Sources: pause/resume -----------------
 void MainWindow::onPauseResumeSelected() {
-  int row = sourceList_ ? sourceList_->currentRow() : -1;
-  if (row < 0 || row >= (int)sources_.size()) return;
   if ((int)source_enabled_.size() != (int)sources_.size()) source_enabled_.assign(sources_.size(), true);
-  source_enabled_[row] = !source_enabled_[row];
-  logLine(QString("Source %1 %2").arg(row).arg(source_enabled_[row] ? "RESUMED" : "PAUSED"));
+  bool anyPaused = false;
+  for (bool en : source_enabled_) if (!en) { anyPaused = true; break; }
+  bool toEnable = anyPaused;
+  for (int i=0;i<(int)source_enabled_.size();++i) source_enabled_[i] = toEnable;
+  logLine(QString("All sources %1").arg(toEnable ? "RESUMED" : "PAUSED"));
   refreshSourceList();
 }
 
@@ -1107,6 +1233,62 @@ void MainWindow::updatePlaybackParams() {
   }
 }
 
+
+
+void MainWindow::stepAllVideos(int delta) {
+  stopCaptureBlocking();
+  playback_running_ = false;
+  bool stepped = false;
+  QMutexLocker lock(&frames_mutex_);
+  if ((int)last_frames_.size() != (int)sources_.size()) last_frames_.resize(sources_.size());
+  for (int i=0;i<(int)sources_.size();++i) {
+    auto& src = sources_[i];
+    if (src.is_cam || !src.cap.isOpened()) continue;
+    double cur = src.cap.get(cv::CAP_PROP_POS_FRAMES);
+    int64_t target = std::max<int64_t>(0, (int64_t)std::llround(cur) + delta);
+    src.cap.set(cv::CAP_PROP_POS_FRAMES, (double)target);
+    cv::Mat f;
+    src.cap.read(f);
+    if (!f.empty()) {
+      last_frames_[i] = f;
+      stepped = true;
+    }
+  }
+  if (stepped) {
+    logLine(QString("Step frame: %1").arg(delta > 0 ? "next" : "prev"));
+  } else {
+    logLine("Step frame ignored: no video source ready.");
+  }
+}
+
+void MainWindow::onStepPrevFrame() { stepAllVideos(-1); }
+void MainWindow::onStepNextFrame() { stepAllVideos(1); }
+
+void MainWindow::onToolPan() {
+  btnToolPan_->setChecked(true);
+  btnToolPoint_->setChecked(false);
+  btnToolLine_->setChecked(false);
+  if (viewer_) viewer_->setToolMode(ImageViewer::PanTool);
+}
+
+void MainWindow::onToolPoint() {
+  btnToolPan_->setChecked(false);
+  btnToolPoint_->setChecked(true);
+  btnToolLine_->setChecked(false);
+  if (viewer_) viewer_->setToolMode(ImageViewer::PointTool);
+}
+
+void MainWindow::onToolLine() {
+  btnToolPan_->setChecked(false);
+  btnToolPoint_->setChecked(false);
+  btnToolLine_->setChecked(true);
+  if (viewer_) viewer_->setToolMode(ImageViewer::LineTool);
+}
+
+void MainWindow::onZoomIn() { if (viewer_) viewer_->zoomIn(); }
+void MainWindow::onZoomOut() { if (viewer_) viewer_->zoomOut(); }
+void MainWindow::onResetView() { if (viewer_) viewer_->resetView(); }
+void MainWindow::onClearAnnotations() { if (viewer_) viewer_->clearAnnotations(); }
 
 void MainWindow::onPlayAll() {
   // Requirement: import video does NOT auto-play; start only when >=2 videos or user presses Play
