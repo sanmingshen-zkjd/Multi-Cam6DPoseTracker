@@ -1,4 +1,6 @@
 #include <QApplication>
+#include <QGuiApplication>
+#include <QtGlobal>
 #include <QString>
 #include <iostream>
 #include <vector>
@@ -33,7 +35,18 @@ static bool openSources(std::vector<InputSource>& sources) {
 }
 
 int main(int argc, char** argv) {
-  QApplication app(argc, argv);  std::vector<InputSource> sources;
+#if QT_VERSION >= QT_VERSION_CHECK(5, 6, 0)
+  QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+  QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+#endif
+#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+  QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+      Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+#endif
+
+  QApplication app(argc, argv);
+
+  std::vector<InputSource> sources;
   int board_w=-1, board_h=-1;
   double square=0.0;
 
