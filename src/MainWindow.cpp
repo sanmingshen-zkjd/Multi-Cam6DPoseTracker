@@ -463,6 +463,7 @@ void MainWindow::closeAllSources() {
 
 void MainWindow::refreshSourceList() {
   QStringList status;
+  QMutexLocker locker(&sources_mutex_);
   for (int i=0;i<(int)sources_.size();++i) {
     const auto& s = sources_[i];
     QString label = s.is_cam ? QString("Camera %1").arg(s.cam_id)
@@ -613,31 +614,13 @@ void MainWindow::onModeTracking() {
 
 bool MainWindow::readFrames(std::vector<cv::Mat>& frames) {
   frames.clear();
-  if (sources_.empty()) return false;
-  if ((int)source_enabled_.size() != (int)sources_.size()) source_enabled_.assign(sources_.size(), true);
-  if ((int)last_frames_.size() != (int)sources_.size()) last_frames_.resize(sources_.size());
-
-  for (int i=0;i<(int)sources_.size();++i) {
-    auto& s = sources_[i];
-    if (!s.cap.isOpened()) return false;
-
-    if (!source_enabled_[i]) {
-      if (last_frames_[i].empty()) {
-        // if paused before any frame, still try to grab one
-        cv::Mat f;
-        if (!s.cap.read(f) || f.empty()) return false;
-        last_frames_[i] = f;
-      }
-      frames.push_back(last_frames_[i]);
-      continue;
-    }
-
-    cv::Mat f;
-    if (!s.cap.read(f) || f.empty()) return false;
-    last_frames_[i] = f;
+  QMutexLocker locker(&frames_mutex_);
+  if (last_frames_.empty()) return false;
+  for (const auto& f : last_frames_) {
+    if (f.empty()) return false;
     frames.push_back(f);
   }
-  return true;
+  return !frames.empty();
 }
 
 QImage MainWindow::matToQImage(const cv::Mat& bgr) {
@@ -791,8 +774,11 @@ void MainWindow::updateFpsStats(double dt_ms) {
 }
 
 void MainWindow::setSourceEnabled(int idx, bool enabled) {
-  if (idx < 0 || idx >= (int)source_enabled_.size()) return;
-  source_enabled_[idx] = enabled;
+  {
+    QMutexLocker locker(&sources_mutex_);
+    if (idx < 0 || idx >= (int)source_enabled_.size()) return;
+    source_enabled_[idx] = enabled;
+  }
   refreshSourceList();
 }
 
@@ -1024,11 +1010,15 @@ void MainWindow::onPrintPose() {
 
 // ----------------- Sources: pause/resume -----------------
 void MainWindow::onPauseResumeSelected() {
-  if ((int)source_enabled_.size() != (int)sources_.size()) source_enabled_.assign(sources_.size(), true);
-  bool anyPaused = false;
-  for (bool en : source_enabled_) if (!en) { anyPaused = true; break; }
-  bool toEnable = anyPaused;
-  for (int i=0;i<(int)source_enabled_.size();++i) source_enabled_[i] = toEnable;
+  bool toEnable = true;
+  {
+    QMutexLocker locker(&sources_mutex_);
+    if ((int)source_enabled_.size() != (int)sources_.size()) source_enabled_.assign(sources_.size(), true);
+    bool anyPaused = false;
+    for (bool en : source_enabled_) if (!en) { anyPaused = true; break; }
+    toEnable = anyPaused;
+    for (int i=0;i<(int)source_enabled_.size();++i) source_enabled_[i] = toEnable;
+  }
   logLine(QString("All sources %1").arg(toEnable ? "RESUMED" : "PAUSED"));
   refreshSourceList();
 }

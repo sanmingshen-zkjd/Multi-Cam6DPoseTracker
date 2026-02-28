@@ -67,51 +67,56 @@ signals:
 private slots:
   void tick() {
     if (!running_) return;
-    if (!sources_ || sources_->empty()) return;
-
-    if ((int)enabled_->size() != (int)sources_->size()) enabled_->assign(sources_->size(), true);
-    if ((int)last_frames_->size() != (int)sources_->size()) last_frames_->resize(sources_->size());
+    if (!sources_ || !enabled_) return;
 
     FramePack frames;
-    frames.reserve(sources_->size());
+    {
+      QMutexLocker locker(mutex_);
+      if (sources_->empty()) return;
 
-    for (int i=0;i<(int)sources_->size();++i) {
-      auto& s = (*sources_)[i];
-      if (!s.cap.isOpened()) {
-        frames.push_back(cv::Mat());
-        continue;
+      if ((int)enabled_->size() != (int)sources_->size()) enabled_->assign(sources_->size(), true);
+      if ((int)cache_frames_.size() != (int)sources_->size()) cache_frames_.resize(sources_->size());
+
+      frames.reserve(sources_->size());
+
+      for (int i=0;i<(int)sources_->size();++i) {
+        auto& s = (*sources_)[i];
+        if (!s.cap.isOpened()) {
+          frames.push_back(cv::Mat());
+          continue;
+        }
+
+        if (!(*enabled_)[i]) {
+          frames.push_back(cache_frames_[i]);
+          continue;
+        }
+
+        cv::Mat f;
+        if (!s.is_cam && sync_mode_) {
+          // Synchronized video playback: force all videos to the same frame index
+          s.cap.set(cv::CAP_PROP_POS_FRAMES, (double)cur_frame_);
+          s.cap.read(f);
+        } else {
+          s.cap.read(f);
+        }
+
+        if (f.empty()) {
+          // fallback to last good frame (may still be empty)
+          frames.push_back(cache_frames_[i]);
+        } else {
+          cache_frames_[i] = f;
+          frames.push_back(f);
+        }
       }
 
-      if (!(*enabled_)[i]) {
-        frames.push_back((*last_frames_)[i]);
-        continue;
-      }
-
-      cv::Mat f;
-      if (!s.is_cam && sync_mode_) {
-        // Synchronized video playback: force all videos to the same frame index
-        s.cap.set(cv::CAP_PROP_POS_FRAMES, (double)cur_frame_);
-        s.cap.read(f);
-      } else {
-        s.cap.read(f);
-      }
-
-      if (f.empty()) {
-        // fallback to last good frame (may still be empty)
-        frames.push_back((*last_frames_)[i]);
-      } else {
-        (*last_frames_)[i] = f;
-        frames.push_back(f);
-      }
-    }
-
-    // Advance frame for sync playback (videos only)
-    if (sync_mode_) {
-      cur_frame_++;
-      if (end_frame_ > 0 && cur_frame_ >= end_frame_) {
-        // stop at end; UI can restart
-        running_ = false;
-        if (timer_) timer_->stop();
+      // Advance frame for sync playback (videos only)
+      if (sync_mode_) {
+        cur_frame_++;
+        if (end_frame_ > 0 && cur_frame_ >= end_frame_) {
+          // stop at end; UI can restart
+          running_ = false;
+          if (timer_) timer_->stop();
+        }
       }
     }
 
@@ -122,7 +127,8 @@ private slots:
 private:
   std::vector<InputSource>* sources_ = nullptr;
   std::vector<bool>* enabled_ = nullptr;
-  std::vector<cv::Mat>* last_frames_ = nullptr;
+  std::vector<cv::Mat>* last_frames_ = nullptr; // legacy, no cross-thread writes
+  std::vector<cv::Mat> cache_frames_;
   QMutex* mutex_ = nullptr;
   int interval_ms_=15;
   QTimer* timer_=nullptr;
