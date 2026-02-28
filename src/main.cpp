@@ -51,20 +51,31 @@ int main(int argc, char** argv) {
   QApplication app(argc, argv);
 
 
-  // Increase global UI font with system DPI so text stays readable on Windows scaling.
+  // Increase global UI font and control metrics for better readability/proportion.
+  qreal dpiScale = 1.0;
   if (QScreen* screen = QGuiApplication::primaryScreen()) {
-    const qreal dpiScale = std::max<qreal>(1.0, screen->logicalDotsPerInch() / 96.0);
-    QFont font = app.font();
-    if (font.pointSizeF() > 0.0) {
-      const qreal targetPt = std::max<qreal>(11.0, font.pointSizeF() * dpiScale * 1.08);
-      font.setPointSizeF(targetPt);
-      app.setFont(font);
-    } else if (font.pixelSize() > 0) {
-      const int targetPx = std::max(15, (int)std::lround(font.pixelSize() * dpiScale * 1.08));
-      font.setPixelSize(targetPx);
-      app.setFont(font);
-    }
+    dpiScale = std::max<qreal>(1.0, screen->logicalDotsPerInch() / 96.0);
   }
+
+  QFont font = app.font();
+  if (font.pointSizeF() > 0.0) {
+    const qreal boosted = font.pointSizeF() * std::max<qreal>(1.20, dpiScale * 1.20);
+    const qreal targetPt = std::max<qreal>(13.5, boosted);
+    font.setPointSizeF(targetPt);
+    app.setFont(font);
+  } else if (font.pixelSize() > 0) {
+    const int boosted = (int)std::lround(font.pixelSize() * std::max<qreal>(1.20, dpiScale * 1.20));
+    const int targetPx = std::max(18, boosted);
+    font.setPixelSize(targetPx);
+    app.setFont(font);
+  }
+
+  // Keep button/input text proportionate to larger layouts.
+  const int minControlH = std::max(34, (int)std::lround(34.0 * dpiScale));
+  app.setStyleSheet(QString(
+      "QPushButton,QToolButton,QComboBox,QSpinBox,QDoubleSpinBox{min-height:%1px;padding:4px 8px;}"
+      "QTabBar::tab{padding:6px 12px;}")
+      .arg(minControlH));
 
   std::vector<InputSource> sources;
   int board_w=-1, board_h=-1;
