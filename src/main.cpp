@@ -1,8 +1,12 @@
 #include <QApplication>
 #include <QGuiApplication>
+#include <QScreen>
+#include <QFont>
 #include <QtGlobal>
 #include <QString>
 #include <iostream>
+#include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include <opencv2/opencv.hpp>
@@ -45,6 +49,22 @@ int main(int argc, char** argv) {
 #endif
 
   QApplication app(argc, argv);
+
+
+  // Increase global UI font with system DPI so text stays readable on Windows scaling.
+  if (QScreen* screen = QGuiApplication::primaryScreen()) {
+    const qreal dpiScale = std::max<qreal>(1.0, screen->logicalDotsPerInch() / 96.0);
+    QFont font = app.font();
+    if (font.pointSizeF() > 0.0) {
+      const qreal targetPt = std::max<qreal>(11.0, font.pointSizeF() * dpiScale * 1.08);
+      font.setPointSizeF(targetPt);
+      app.setFont(font);
+    } else if (font.pixelSize() > 0) {
+      const int targetPx = std::max(15, (int)std::lround(font.pixelSize() * dpiScale * 1.08));
+      font.setPixelSize(targetPx);
+      app.setFont(font);
+    }
+  }
 
   std::vector<InputSource> sources;
   int board_w=-1, board_h=-1;
