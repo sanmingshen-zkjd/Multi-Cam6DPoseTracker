@@ -249,7 +249,7 @@ void MainWindow::buildUI() {
     sideModeTabs_->addTab("Calibration");
     sideModeTabs_->addTab("Tracking");
     sideModeTabs_->setExpanding(true);
-    sideModeTabs_->setShape(QTabBar::RoundedNorth);
+    sideModeTabs_->setShape(QTabBar::RoundedWest);
     sideModeTabs_->setDrawBase(false);
     sideModeTabs_->setCurrentIndex(0);
     sideModeTabs_->setMovable(false);
