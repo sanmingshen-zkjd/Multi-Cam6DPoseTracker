@@ -17,6 +17,8 @@
 #include <QJsonArray>
 #include <QFile>
 #include <QScrollArea>
+#include <QApplication>
+#include <QHeaderView>
 
 static QString nowStr() {
   return QDateTime::currentDateTime().toString("hh:mm:ss");
@@ -354,19 +356,39 @@ void MainWindow::buildUI() {
 
     btnGrab_ = new QPushButton("Grab Frame (Chessboard)", tabCal);
     btnReset_ = new QPushButton("Reset Captures", tabCal);
-    btnCalibrate_ = new QPushButton("Calibrate + Save rig_calib.yaml", tabCal);
+    btnComputeCalib_ = new QPushButton("Compute Calibration", tabCal);
+    btnRecomputeCalib_ = new QPushButton("Recompute (Selected Frames)", tabCal);
+    btnSaveCalib_ = new QPushButton("Save rig_calib.yaml", tabCal);
+    btnSaveCalib_->setEnabled(false);
+    calibProgressBar_ = new QProgressBar(tabCal);
+    calibProgressBar_->setRange(0, 100);
+    calibProgressBar_->setValue(0);
+    lblCalibProgress_ = new QLabel("Progress: idle", tabCal);
+    calibErrorTable_ = new QTableWidget(tabCal);
+    calibErrorTable_->setColumnCount(3);
+    calibErrorTable_->setHorizontalHeaderLabels(QStringList() << "Use" << "Frame" << "RMSE(px)");
+    calibErrorTable_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    calibErrorTable_->verticalHeader()->setVisible(false);
+    calibErrorTable_->setAlternatingRowColors(true);
     lblCaptured_ = new QLabel("Captured: 0", tabCal);
 
     calv->addWidget(gbBoard);
     calv->addWidget(btnGrab_);
     calv->addWidget(btnReset_);
-    calv->addWidget(btnCalibrate_);
+    calv->addWidget(btnComputeCalib_);
+    calv->addWidget(btnRecomputeCalib_);
+    calv->addWidget(btnSaveCalib_);
+    calv->addWidget(calibProgressBar_);
+    calv->addWidget(lblCalibProgress_);
+    calv->addWidget(calibErrorTable_);
     calv->addWidget(lblCaptured_);
     calv->addStretch(1);
 
     connect(btnGrab_, &QPushButton::clicked, this, &MainWindow::onGrabFrame);
     connect(btnReset_, &QPushButton::clicked, this, &MainWindow::onResetFrames);
-    connect(btnCalibrate_, &QPushButton::clicked, this, &MainWindow::onCalibrateAndSave);
+    connect(btnComputeCalib_, &QPushButton::clicked, this, &MainWindow::onComputeCalibration);
+    connect(btnRecomputeCalib_, &QPushButton::clicked, this, &MainWindow::onRecomputeCalibrationSelected);
+    connect(btnSaveCalib_, &QPushButton::clicked, this, &MainWindow::onSaveCalibrationYaml);
 
     // If board params change, rebuild calibrator and reset captures
     connect(spBoardW_, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int){ rebuildCalibratorFromUI(true); });
@@ -563,6 +585,13 @@ void MainWindow::rebuildCalibratorFromUI(bool reset) {
   if (reset) {
     calibrator_.reset(new MultiCamCalibrator(std::max(1, (int)sources_.size()),
                                              cv::Size(board_w_, board_h_), square_));
+    calib_pairs_.clear();
+    calib_pair_rmse_.clear();
+    has_computed_calib_ = false;
+    if (btnSaveCalib_) btnSaveCalib_->setEnabled(false);
+    if (calibErrorTable_) calibErrorTable_->setRowCount(0);
+    if (calibProgressBar_) calibProgressBar_->setValue(0);
+    if (lblCalibProgress_) lblCalibProgress_->setText("Progress: idle");
     logLine(QString("Chessboard params updated: %1x%2 square=%3 m (captures reset)")
             .arg(board_w_).arg(board_h_).arg(square_,0,'f',6));
     last_inliers_ = 0;
@@ -1098,11 +1127,18 @@ void MainWindow::onGrabFrame() {
 
 void MainWindow::onResetFrames() {
   calibrator_->reset();
+  calib_pairs_.clear();
+  calib_pair_rmse_.clear();
+  has_computed_calib_ = false;
+  if (btnSaveCalib_) btnSaveCalib_->setEnabled(false);
+  if (calibErrorTable_) calibErrorTable_->setRowCount(0);
+  if (calibProgressBar_) calibProgressBar_->setValue(0);
+  if (lblCalibProgress_) lblCalibProgress_->setText("Progress: idle");
   logLine("Reset captured frames.");
   updateStatus();
 }
 
-void MainWindow::onCalibrateAndSave() {
+void MainWindow::onComputeCalibration() {
   // Use all frames from the two Calibration-tab sources (no Grab required).
   std::vector<int> idx;
   {
@@ -1116,16 +1152,39 @@ void MainWindow::onCalibrateAndSave() {
     return;
   }
 
+  has_computed_calib_ = false;
+  if (btnSaveCalib_) btnSaveCalib_->setEnabled(false);
+  calib_pairs_.clear();
+  calib_pair_rmse_.clear();
+  if (calibErrorTable_) calibErrorTable_->setRowCount(0);
+  if (calibProgressBar_) {
+    calibProgressBar_->setRange(0, 100);
+    calibProgressBar_->setValue(0);
+  }
+  if (lblCalibProgress_) lblCalibProgress_->setText("Progress: preparing...");
+
   stopCaptureBlocking();
-  calibrator_->reset();
+
+  int totalFrames = 0;
   {
     QMutexLocker lock(&sources_mutex_);
     for (int k : idx) {
       if (k < 0 || k >= (int)sources_.size()) continue;
       if (sources_[k].is_image_seq) sources_[k].seq_idx = 0;
-      else if (sources_[k].cap.isOpened()) sources_[k].cap.set(cv::CAP_PROP_POS_FRAMES, 0);
+      else if (sources_[k].cap.isOpened()) {
+        sources_[k].cap.set(cv::CAP_PROP_POS_FRAMES, 0);
+      }
     }
+    auto frameCount = [&](const InputSource& s)->int {
+      if (s.is_image_seq) return s.seq_files.size();
+      if (!s.cap.isOpened()) return 0;
+      return std::max(0, (int)s.cap.get(cv::CAP_PROP_FRAME_COUNT));
+    };
+    int c0 = frameCount(sources_[idx[0]]);
+    int c1 = frameCount(sources_[idx[1]]);
+    totalFrames = (c0 > 0 && c1 > 0) ? std::min(c0, c1) : 0;
   }
+  if (calibProgressBar_ && totalFrames > 0) calibProgressBar_->setRange(0, totalFrames);
 
   auto readNext = [](InputSource& s, cv::Mat& out)->bool {
     if (s.is_image_seq) {
@@ -1138,34 +1197,136 @@ void MainWindow::onCalibrateAndSave() {
     return s.cap.read(out) && !out.empty();
   };
 
-  std::vector<cv::Size> sizes;
-  bool sizesSet = false;
-  int usedPairs = 0;
+  int frameId = 0;
   while (true) {
     cv::Mat a, b;
     {
       QMutexLocker lock(&sources_mutex_);
       if (!readNext(sources_[idx[0]], a) || !readNext(sources_[idx[1]], b)) break;
     }
-    std::vector<cv::Mat> pair = {a,b};
-    if (!sizesSet) { sizes = {a.size(), b.size()}; sizesSet = true; }
-    if (calibrator_->detectAndMaybeStore(pair, true)) usedPairs++;
+    CalibrationPair p;
+    p.frame_id = frameId;
+    p.left = a;
+    p.right = b;
+    calib_pairs_.push_back(std::move(p));
+    frameId++;
+
+    if (calibProgressBar_ && totalFrames > 0) calibProgressBar_->setValue(std::min(frameId, totalFrames));
+    if (lblCalibProgress_) lblCalibProgress_->setText(QString("Progress: scanning %1 / %2").arg(frameId).arg(std::max(totalFrames, frameId)));
+    QApplication::processEvents();
   }
 
-  if (usedPairs <= 0 || !sizesSet) {
-    QMessageBox::warning(this, "Calibration", "No valid chessboard pairs found across all frames.");
+  if (calib_pairs_.empty()) {
+    QMessageBox::warning(this, "Calibration", "No frame pairs found from the selected sources.");
     return;
   }
 
+  if (calibErrorTable_) {
+    calibErrorTable_->setRowCount((int)calib_pairs_.size());
+    for (int i = 0; i < (int)calib_pairs_.size(); ++i) {
+      QTableWidgetItem* useItem = new QTableWidgetItem();
+      useItem->setCheckState(Qt::Checked);
+      useItem->setFlags(useItem->flags() | Qt::ItemIsUserCheckable);
+      calibErrorTable_->setItem(i, 0, useItem);
+      calibErrorTable_->setItem(i, 1, new QTableWidgetItem(QString::number(calib_pairs_[i].frame_id)));
+      calibErrorTable_->setItem(i, 2, new QTableWidgetItem("-"));
+    }
+  }
+
+  std::vector<int> selected;
+  selected.reserve(calib_pairs_.size());
+  for (int i = 0; i < (int)calib_pairs_.size(); ++i) selected.push_back(i);
+  if (!runCalibrationOnPairs(selected, true)) return;
+}
+
+bool MainWindow::runCalibrationOnPairs(const std::vector<int>& pairIndices, bool updateTable) {
+  if (pairIndices.empty()) {
+    QMessageBox::warning(this, "Calibration", "No frame selected for calibration.");
+    return false;
+  }
+
+  if (calibProgressBar_) {
+    calibProgressBar_->setRange(0, (int)pairIndices.size());
+    calibProgressBar_->setValue(0);
+  }
+  if (lblCalibProgress_) lblCalibProgress_->setText("Progress: detecting chessboard...");
+
+  calibrator_->reset();
+  std::vector<cv::Size> sizes;
+  bool sizesSet = false;
+  int usedPairs = 0;
+  for (int i = 0; i < (int)pairIndices.size(); ++i) {
+    int id = pairIndices[i];
+    if (id < 0 || id >= (int)calib_pairs_.size()) continue;
+    const auto& p = calib_pairs_[id];
+    std::vector<cv::Mat> pair = {p.left, p.right};
+    if (!sizesSet) {
+      sizes = {p.left.size(), p.right.size()};
+      sizesSet = true;
+    }
+    if (calibrator_->detectAndMaybeStore(pair, true)) usedPairs++;
+    if (calibProgressBar_) calibProgressBar_->setValue(i + 1);
+    QApplication::processEvents();
+  }
+
+  if (usedPairs <= 0 || !sizesSet) {
+    QMessageBox::warning(this, "Calibration", "No valid chessboard pairs found in selected frames.");
+    return false;
+  }
+
+  if (lblCalibProgress_) lblCalibProgress_->setText("Progress: solving calibration...");
   double rms=0.0;
   std::vector<CameraModel> out;
   if (!calibrator_->calibrate(sizes, out, rms)) {
     QMessageBox::warning(this, "Calibration", "Calibration failed. Ensure enough captures and paired frames with cam0.");
     logLine("Calibration failed.");
-    return;
+    return false;
   }
+
+  std::vector<double> selectedRmse;
+  calibrator_->computeFrameReprojErrors(out, selectedRmse);
+  calib_pair_rmse_.assign(calib_pairs_.size(), -1.0);
+  for (int i = 0; i < (int)pairIndices.size() && i < (int)selectedRmse.size(); ++i) {
+    int id = pairIndices[i];
+    if (id >= 0 && id < (int)calib_pair_rmse_.size()) calib_pair_rmse_[id] = selectedRmse[i];
+  }
+
+  if (updateTable && calibErrorTable_) {
+    for (int row = 0; row < calibErrorTable_->rowCount() && row < (int)calib_pair_rmse_.size(); ++row) {
+      const double e = calib_pair_rmse_[row];
+      calibErrorTable_->setItem(row, 2, new QTableWidgetItem(e >= 0.0 ? QString::number(e, 'f', 3) : "N/A"));
+    }
+  }
+
   cams_ = out;
   calib_loaded_ = true;
+  has_computed_calib_ = true;
+  if (btnSaveCalib_) btnSaveCalib_->setEnabled(true);
+  if (solveWorker_) solveWorker_->setStaticData(&cams_, &tag_corner_map_);
+  if (lblCalibProgress_) lblCalibProgress_->setText(QString("Progress: done, mean RMS=%1").arg(rms, 0, 'f', 4));
+  logLine(QString("Calibration OK. mean RMS=%1").arg(rms));
+  return true;
+}
+
+void MainWindow::onRecomputeCalibrationSelected() {
+  if (calib_pairs_.empty() || !calibErrorTable_) {
+    QMessageBox::information(this, "Calibration", "Please run Compute Calibration first.");
+    return;
+  }
+
+  std::vector<int> selected;
+  for (int row = 0; row < calibErrorTable_->rowCount(); ++row) {
+    QTableWidgetItem* item = calibErrorTable_->item(row, 0);
+    if (item && item->checkState() == Qt::Checked) selected.push_back(row);
+  }
+  runCalibrationOnPairs(selected, true);
+}
+
+void MainWindow::onSaveCalibrationYaml() {
+  if (!has_computed_calib_ || cams_.empty()) {
+    QMessageBox::information(this, "Save", "Please compute calibration first.");
+    return;
+  }
 
   QString savePath = QFileDialog::getSaveFileName(this, "Save rig_calib.yaml", "rig_calib.yaml", "YAML (*.yaml *.yml)");
   if (savePath.isEmpty()) return;
@@ -1176,8 +1337,7 @@ void MainWindow::onCalibrateAndSave() {
     QMessageBox::warning(this, "Save", "Failed to save YAML.");
     return;
   }
-  if (solveWorker_) solveWorker_->setStaticData(&cams_, &tag_corner_map_);
-  logLine(QString("Calibration OK. mean RMS=%1. Saved: %2").arg(rms).arg(savePath));
+  logLine(QString("Calibration YAML saved: %1").arg(savePath));
   settings_.setValue("lastCalibYaml", savePath);
 }
 

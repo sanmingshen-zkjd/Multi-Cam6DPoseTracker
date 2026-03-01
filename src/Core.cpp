@@ -227,6 +227,48 @@ bool MultiCamCalibrator::calibrate(const std::vector<cv::Size>& image_sizes,
   return true;
 }
 
+bool MultiCamCalibrator::computeFrameReprojErrors(
+    const std::vector<CameraModel>& cams,
+    std::vector<double>& frame_rmse) const
+{
+  frame_rmse.clear();
+  if ((int)cams.size() != num_cams_ || frames_.empty()) return false;
+
+  cv::Mat rvec0 = cv::Mat::zeros(3, 1, CV_64F);
+  cv::Mat tvec0 = cv::Mat::zeros(3, 1, CV_64F);
+
+  for (const auto& fr : frames_) {
+    double sse = 0.0;
+    int cnt = 0;
+
+    for (int cam = 0; cam < num_cams_; ++cam) {
+      if (cam < 0 || cam >= (int)fr.ok.size() || !fr.ok[cam]) continue;
+      if ((int)fr.corners[cam].size() != (int)objp_.size()) continue;
+
+      cv::Mat rvec = rvec0.clone();
+      cv::Mat tvec = tvec0.clone();
+      bool pnpOk = cv::solvePnP(objp_, fr.corners[cam], cams[cam].K, cams[cam].dist, rvec, tvec);
+      if (!pnpOk) continue;
+
+      std::vector<cv::Point2f> proj;
+      cv::projectPoints(objp_, rvec, tvec, cams[cam].K, cams[cam].dist, proj);
+      if ((int)proj.size() != (int)fr.corners[cam].size()) continue;
+
+      for (size_t i = 0; i < proj.size(); ++i) {
+        const double dx = double(proj[i].x - fr.corners[cam][i].x);
+        const double dy = double(proj[i].y - fr.corners[cam][i].y);
+        sse += dx * dx + dy * dy;
+        cnt++;
+      }
+    }
+
+    if (cnt <= 0) frame_rmse.push_back(-1.0);
+    else frame_rmse.push_back(std::sqrt(sse / double(cnt)));
+  }
+
+  return !frame_rmse.empty();
+}
+
 // ============================================================
 // AprilTag detection -> observations
 // ============================================================

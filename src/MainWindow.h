@@ -29,6 +29,8 @@
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QSlider>
+#include <QProgressBar>
+#include <QTableWidget>
 #include <QStringList>
 
 #include <opencv2/opencv.hpp>
@@ -117,7 +119,9 @@ private slots:
   // Calibration actions
   void onGrabFrame();
   void onResetFrames();
-  void onCalibrateAndSave();
+  void onComputeCalibration();
+  void onRecomputeCalibrationSelected();
+  void onSaveCalibrationYaml();
 
   // Tracking actions
   void onLoadTagMap();
@@ -169,6 +173,7 @@ private:
   void overlayTracking(std::vector<cv::Mat>& vis, const std::vector<cv::Mat>& frames);
 
   void updateStatus();
+  bool runCalibrationOnPairs(const std::vector<int>& pairIndices, bool updateTable);
 
 private:
   // Inputs
@@ -265,7 +270,12 @@ private:
   QDoubleSpinBox* spSquare_=nullptr;
   QPushButton* btnGrab_=nullptr;
   QPushButton* btnReset_=nullptr;
-  QPushButton* btnCalibrate_=nullptr;
+  QPushButton* btnComputeCalib_=nullptr;
+  QPushButton* btnRecomputeCalib_=nullptr;
+  QPushButton* btnSaveCalib_=nullptr;
+  QProgressBar* calibProgressBar_=nullptr;
+  QLabel* lblCalibProgress_=nullptr;
+  QTableWidget* calibErrorTable_=nullptr;
   QLabel* lblCaptured_=nullptr;
 
   // Tracking tab
@@ -301,6 +311,15 @@ private:
   double play_fps_=30.0;
   int ui_frame_skip_=0;
   int ui_overlay_div_=4; // run heavy overlay every N UI ticks
+
+  struct CalibrationPair {
+    int frame_id = -1;
+    cv::Mat left;
+    cv::Mat right;
+  };
+  std::vector<CalibrationPair> calib_pairs_;
+  std::vector<double> calib_pair_rmse_;
+  bool has_computed_calib_ = false;
 
   // Timer (UI refresh)
   QTimer timer_;
