@@ -637,7 +637,7 @@ void MainWindow::refreshSourceList() {
     label += en ? "[RUN]" : "[PAUSED]";
     status << label;
   }
-  if (!status.isEmpty()) statusBar()->showMessage(QString("Sources: %1").arg(status.join(" | ")));
+  Q_UNUSED(status);
 }
 
 std::vector<int> MainWindow::activeSourceIndices() const {
@@ -1197,16 +1197,7 @@ void MainWindow::updateStatus() {
   lblCaptured_->setText(QString("Captured: %1").arg(calibrator_->captured()));
   lblInliers_->setText(QString("Inliers: %1").arg(last_inliers_));
 
-  QString m = (mode_==CALIB) ? "Calibration" : "Tracking";
-  statusBar()->showMessage(QString("Mode: %1 | Sources: %2 | Captured: %3 | TagMap: %4 | Calib: %5 | Pose: %6 | Inliers: %7 | FPS: %8")
-    .arg(m)
-    .arg((int)sources_.size())
-    .arg(calibrator_->captured())
-    .arg(tagmap_loaded_ ? "YES" : "NO")
-    .arg(calib_loaded_ ? "YES" : "NO")
-    .arg(pose_on_ ? "ON" : "OFF")
-    .arg(last_inliers_)
-    .arg(fps_, 0, 'f', 1));
+  statusBar()->clearMessage();
 }
 
 void MainWindow::onTick() {
