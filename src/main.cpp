@@ -83,7 +83,8 @@ int main(int argc, char** argv) {
       "QTabBar::tab:selected{background:#4b6ea8;color:#ffffff;font-weight:600;}"
       "QTabBar::tab:!selected{background:#2d333b;color:#c6ced8;}"
       "QSlider::groove:horizontal{height:8px;background:#3a4250;border-radius:4px;}"
-      "QSlider::handle:horizontal{width:16px;margin:-5px 0;background:#7aa2f7;border-radius:8px;}")
+      "QSlider::handle:horizontal{width:16px;margin:-5px 0;background:#7aa2f7;border-radius:8px;}"
+      "QToolTip{background:#f4f6f8;color:#111;border:1px solid #6b7280;padding:4px;}")
       .arg(minControlH));
 
   std::vector<InputSource> sources;
