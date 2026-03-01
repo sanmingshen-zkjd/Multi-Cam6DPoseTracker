@@ -288,6 +288,9 @@ void MainWindow::buildUI() {
     sideSep->setFrameShadow(QFrame::Plain);
     root->addWidget(sideSep);
 
+    const int sidebarReserved = sideBar->width() + 18;
+    statusBar()->setStyleSheet(QString("QStatusBar{padding-left:%1px;}").arg(sidebarReserved));
+
     QWidget* mainPane = new QWidget(central);
     QVBoxLayout* v = new QVBoxLayout(mainPane);
 
