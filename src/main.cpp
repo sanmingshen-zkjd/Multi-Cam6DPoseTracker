@@ -73,8 +73,15 @@ int main(int argc, char** argv) {
   // Keep button/input text proportionate to larger layouts.
   const int minControlH = std::max(34, (int)std::lround(34.0 * dpiScale));
   app.setStyleSheet(QString(
-      "QPushButton,QToolButton,QComboBox,QSpinBox,QDoubleSpinBox{min-height:%1px;padding:4px 8px;}"
-      "QTabBar::tab{padding:6px 12px;}")
+      "QMainWindow,QWidget{background:#20242b;color:#e8edf2;}"
+      "QLabel{color:#e8edf2;}"
+      "QPushButton,QToolButton,QComboBox,QSpinBox,QDoubleSpinBox{"
+      "min-height:%1px;padding:4px 8px;background:#2d333b;color:#f0f4f8;border:1px solid #4a5563;border-radius:4px;}"
+      "QPushButton:hover,QToolButton:hover{background:#384150;}"
+      "QPushButton:pressed,QToolButton:pressed{background:#222831;}"
+      "QTabBar::tab{padding:6px 12px;background:#2d333b;color:#e8edf2;}"
+      "QSlider::groove:horizontal{height:8px;background:#3a4250;border-radius:4px;}"
+      "QSlider::handle:horizontal{width:16px;margin:-5px 0;background:#7aa2f7;border-radius:8px;}")
       .arg(minControlH));
 
   std::vector<InputSource> sources;

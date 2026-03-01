@@ -255,7 +255,6 @@ private:
   QToolButton* btnClearAnno_=nullptr;
   QLabel* lblLineState_=nullptr;
   QSlider* progressSlider_=nullptr;
-  QLabel* lblProgress_=nullptr;
   //QCheckBox* chkSyncPlay_=nullptr;
   //QLabel* lblPlayState_=nullptr;
   QPushButton* btnSaveProject_=nullptr;

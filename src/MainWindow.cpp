@@ -265,40 +265,7 @@ void MainWindow::buildUI() {
     btnStepPrev_->setToolTip("Prev Frame");
     btnStepNext_->setToolTip("Next Frame");
 
-    QWidget* playerToolStrip = new QWidget(central);
-    playerToolStrip->setStyleSheet("background:#2c2f33; border:1px solid #3a3d42; border-radius:2px;");
-    QHBoxLayout* imageToolRow = new QHBoxLayout(playerToolStrip);
-    imageToolRow->setContentsMargins(6, 4, 6, 4);
-    imageToolRow->setSpacing(4);
-    btnToolPan_ = new QToolButton(playerToolStrip);
-    btnToolPoint_ = new QToolButton(playerToolStrip);
-    btnToolLine_ = new QToolButton(playerToolStrip);
-    btnZoomIn_ = new QToolButton(playerToolStrip);
-    btnZoomOut_ = new QToolButton(playerToolStrip);
-    btnResetView_ = new QToolButton(playerToolStrip);
-    btnClearAnno_ = new QToolButton(playerToolStrip);
-    btnToolPan_->setText("Pan");
-    btnToolPoint_->setText("Point");
-    btnToolLine_->setText("Line");
-    btnZoomIn_->setText("Zoom+");
-    btnZoomOut_->setText("Zoom-");
-    btnResetView_->setText("Reset");
-    btnClearAnno_->setText("Clear");
-    for (QToolButton* b : {btnToolPan_, btnToolPoint_, btnToolLine_, btnZoomIn_, btnZoomOut_, btnResetView_, btnClearAnno_}) {
-      b->setAutoRaise(true);
-      b->setToolButtonStyle(Qt::ToolButtonTextOnly);
-      imageToolRow->addWidget(b);
-    }
-    lblLineState_ = new QLabel("Line: idle", playerToolStrip);
-
-    btnToolPan_->setCheckable(true);
-    btnToolPoint_->setCheckable(true);
-    btnToolLine_->setCheckable(true);
-    btnToolPan_->setChecked(true);
-    imageToolRow->addStretch(1);
-    imageToolRow->addWidget(lblLineState_);
-
-    v->addWidget(playerToolStrip);
+    // Per-view toolbars are created in rebuildSourceViews(), one toolbar per player.
 
     viewsHost_ = new QWidget(this);
     viewsGrid_ = new QGridLayout(viewsHost_);
@@ -315,17 +282,11 @@ void MainWindow::buildUI() {
     playProgressRow->addWidget(btnStepPrev_);
     playProgressRow->addWidget(btnStepNext_);
     playProgressRow->addSpacing(10);
-    playProgressRow->addWidget(new QLabel("Progress", central));
     progressSlider_ = new QSlider(Qt::Horizontal, central);
     progressSlider_->setRange(0, 0);
     progressSlider_->setSingleStep(1);
     progressSlider_->setPageStep(30);
-    progressSlider_->setMaximumWidth(320);
-    lblProgress_ = new QLabel("0 / 0", central);
-    lblProgress_->setMinimumWidth(110);
-    playProgressRow->addWidget(progressSlider_);
-    playProgressRow->addWidget(lblProgress_);
-    playProgressRow->addStretch(1);
+    playProgressRow->addWidget(progressSlider_, 1);
     v->addLayout(playProgressRow);
 
     QHBoxLayout* pbtns = new QHBoxLayout();
@@ -347,13 +308,6 @@ void MainWindow::buildUI() {
     connect(btnStopAll_, &QToolButton::clicked, this, &MainWindow::onStopAll);
     connect(btnStepPrev_, &QToolButton::clicked, this, &MainWindow::onStepPrevFrame);
     connect(btnStepNext_, &QToolButton::clicked, this, &MainWindow::onStepNextFrame);
-    connect(btnToolPan_, &QToolButton::clicked, this, &MainWindow::onToolPan);
-    connect(btnToolPoint_, &QToolButton::clicked, this, &MainWindow::onToolPoint);
-    connect(btnToolLine_, &QToolButton::clicked, this, &MainWindow::onToolLine);
-    connect(btnZoomIn_, &QToolButton::clicked, this, &MainWindow::onZoomIn);
-    connect(btnZoomOut_, &QToolButton::clicked, this, &MainWindow::onZoomOut);
-    connect(btnResetView_, &QToolButton::clicked, this, &MainWindow::onResetView);
-    connect(btnClearAnno_, &QToolButton::clicked, this, &MainWindow::onClearAnnotations);
     connect(progressSlider_, &QSlider::sliderReleased, this, &MainWindow::onProgressSliderReleased);
     connect(btnSaveProject_, &QPushButton::clicked, this, &MainWindow::onSaveProject);
     connect(btnLoadProject_, &QPushButton::clicked, this, &MainWindow::onLoadProject);
@@ -604,15 +558,78 @@ void MainWindow::rebuildSourceViews() {
   }
 
   int cols = (n <= 1) ? 1 : 2;
+  auto themedIcon = [this](const QString& name, QStyle::StandardPixmap sp) {
+    QIcon icon = QIcon::fromTheme(name);
+    if (icon.isNull()) icon = style()->standardIcon(sp);
+    return icon;
+  };
+
   for (int i=0; i<n; ++i) {
-    ImageViewer* v = new ImageViewer(viewsHost_);
+    QWidget* panel = new QWidget(viewsHost_);
+    panel->setStyleSheet("background:#1f2328; border:1px solid #3f4650;");
+    QVBoxLayout* pv = new QVBoxLayout(panel);
+    pv->setContentsMargins(4,4,4,4);
+    pv->setSpacing(4);
+
+    QHBoxLayout* tb = new QHBoxLayout();
+    tb->setContentsMargins(2,2,2,2);
+    tb->setSpacing(2);
+    QToolButton* panBtn = new QToolButton(panel);
+    QToolButton* pointBtn = new QToolButton(panel);
+    QToolButton* lineBtn = new QToolButton(panel);
+    QToolButton* zoomInBtn = new QToolButton(panel);
+    QToolButton* zoomOutBtn = new QToolButton(panel);
+    QToolButton* resetBtn = new QToolButton(panel);
+    QToolButton* clearBtn = new QToolButton(panel);
+    QLabel* lineState = new QLabel("Line: idle", panel);
+
+    panBtn->setIcon(themedIcon("transform-move", QStyle::SP_ArrowUp));
+    pointBtn->setIcon(themedIcon("draw-freehand", QStyle::SP_DialogYesButton));
+    lineBtn->setIcon(themedIcon("draw-line", QStyle::SP_LineEditClearButton));
+    zoomInBtn->setIcon(themedIcon("zoom-in", QStyle::SP_FileDialogDetailedView));
+    zoomOutBtn->setIcon(themedIcon("zoom-out", QStyle::SP_FileDialogListView));
+    resetBtn->setIcon(themedIcon("zoom-fit-best", QStyle::SP_BrowserReload));
+    clearBtn->setIcon(themedIcon("edit-clear", QStyle::SP_TrashIcon));
+
+    panBtn->setCheckable(true);
+    pointBtn->setCheckable(true);
+    lineBtn->setCheckable(true);
+    panBtn->setChecked(true);
+
+    for (QToolButton* b : {panBtn, pointBtn, lineBtn, zoomInBtn, zoomOutBtn, resetBtn, clearBtn}) {
+      b->setAutoRaise(true);
+      tb->addWidget(b);
+    }
+    tb->addStretch(1);
+    tb->addWidget(lineState);
+    pv->addLayout(tb);
+
+    ImageViewer* v = new ImageViewer(panel);
     v->setMinimumSize(480, 270);
     v->setToolMode(ImageViewer::PanTool);
-    connect(v, &ImageViewer::linePreviewText, lblLineState_, &QLabel::setText);
+    connect(v, &ImageViewer::linePreviewText, lineState, &QLabel::setText);
+    connect(panBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
+      panBtn->setChecked(true); pointBtn->setChecked(false); lineBtn->setChecked(false);
+      v->setToolMode(ImageViewer::PanTool);
+    });
+    connect(pointBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
+      panBtn->setChecked(false); pointBtn->setChecked(true); lineBtn->setChecked(false);
+      v->setToolMode(ImageViewer::PointTool);
+    });
+    connect(lineBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
+      panBtn->setChecked(false); pointBtn->setChecked(false); lineBtn->setChecked(true);
+      v->setToolMode(ImageViewer::LineTool);
+    });
+    connect(zoomInBtn, &QToolButton::clicked, this, [v]() { v->zoomIn(); });
+    connect(zoomOutBtn, &QToolButton::clicked, this, [v]() { v->zoomOut(); });
+    connect(resetBtn, &QToolButton::clicked, this, [v]() { v->resetView(); });
+    connect(clearBtn, &QToolButton::clicked, this, [v]() { v->clearAnnotations(); });
+    pv->addWidget(v, 1);
+
     sourceViews_.push_back(v);
     int r = i / cols;
     int c = i % cols;
-    viewsGrid_->addWidget(v, r, c);
+    viewsGrid_->addWidget(panel, r, c);
   }
 }
 
@@ -740,12 +757,11 @@ void MainWindow::onAddVideo()
     last_frames_[num_cams_ - 1] = firstFrame.clone();
 
     source_enabled_.assign(std::max(0,num_cams_), true);
-    // last_frames_ will be populated by CaptureWorker when frames arrive.
-    last_frames_.resize(std::max(0,num_cams_));
     calibrator_.reset(new MultiCamCalibrator(std::max(1,num_cams_), cv::Size(board_w_, board_h_), square_));
     refreshSourceList();
     if (show_docks_) rebuildSourceDocks();
     rebuildSourceViews();
+    updateSourceViews(last_frames_);
     logLine(QString("Added video: %1").arg(path));
 }
 
@@ -796,11 +812,11 @@ void MainWindow::onAddImageSequence()
     last_frames_[num_cams_ - 1] = firstFrame.clone();
 
     source_enabled_.assign(std::max(0, num_cams_), true);
-    last_frames_.resize(std::max(0, num_cams_));
     calibrator_.reset(new MultiCamCalibrator(std::max(1, num_cams_), cv::Size(board_w_, board_h_), square_));
     refreshSourceList();
     if (show_docks_) rebuildSourceDocks();
     rebuildSourceViews();
+    updateSourceViews(last_frames_);
     logLine(QString("Added image sequence: %1 (%2 frames)").arg(dir).arg(files.size()));
 }
 
@@ -1748,14 +1764,13 @@ void MainWindow::updatePlaybackParams() {
 
 
 void MainWindow::updateProgressUI(int64_t frame, int64_t endFrame) {
-  if (!progressSlider_ || !lblProgress_) return;
+  if (!progressSlider_) return;
   int maxVal = (int)std::max<int64_t>(0, endFrame > 0 ? (endFrame - 1) : 0);
   int val = (int)std::max<int64_t>(0, std::min<int64_t>(frame, maxVal));
   progressSlider_->setRange(0, maxVal);
   progressSlider_->blockSignals(true);
   progressSlider_->setValue(val);
   progressSlider_->blockSignals(false);
-  lblProgress_->setText(QString("%1 / %2").arg(val).arg(maxVal));
 }
 
 
@@ -1816,23 +1831,23 @@ void MainWindow::onStepPrevFrame() { stepAllVideos(-1); }
 void MainWindow::onStepNextFrame() { stepAllVideos(1); }
 
 void MainWindow::onToolPan() {
-  btnToolPan_->setChecked(true);
-  btnToolPoint_->setChecked(false);
-  btnToolLine_->setChecked(false);
+  if (btnToolPan_) btnToolPan_->setChecked(true);
+  if (btnToolPoint_) btnToolPoint_->setChecked(false);
+  if (btnToolLine_) btnToolLine_->setChecked(false);
   for (auto* v : sourceViews_) if (v) v->setToolMode(ImageViewer::PanTool);
 }
 
 void MainWindow::onToolPoint() {
-  btnToolPan_->setChecked(false);
-  btnToolPoint_->setChecked(true);
-  btnToolLine_->setChecked(false);
+  if (btnToolPan_) btnToolPan_->setChecked(false);
+  if (btnToolPoint_) btnToolPoint_->setChecked(true);
+  if (btnToolLine_) btnToolLine_->setChecked(false);
   for (auto* v : sourceViews_) if (v) v->setToolMode(ImageViewer::PointTool);
 }
 
 void MainWindow::onToolLine() {
-  btnToolPan_->setChecked(false);
-  btnToolPoint_->setChecked(false);
-  btnToolLine_->setChecked(true);
+  if (btnToolPan_) btnToolPan_->setChecked(false);
+  if (btnToolPoint_) btnToolPoint_->setChecked(false);
+  if (btnToolLine_) btnToolLine_->setChecked(true);
   for (auto* v : sourceViews_) if (v) v->setToolMode(ImageViewer::LineTool);
 }
 
