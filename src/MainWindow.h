@@ -236,10 +236,10 @@ private:
 
 
   // Sources panel
-  QPushButton* btnAddCam_=nullptr;
-  QPushButton* btnAddVideo_=nullptr;
-  QPushButton* btnAddImgSeq_=nullptr;
-  QPushButton* btnRemoveSource_=nullptr;
+  QToolButton* btnAddCam_=nullptr;
+  QToolButton* btnAddVideo_=nullptr;
+  QToolButton* btnAddImgSeq_=nullptr;
+  QToolButton* btnRemoveSource_=nullptr;
   QToolButton* btnPauseResume_=nullptr;
   QToolButton* btnPlayAll_=nullptr;
   QToolButton* btnStopAll_=nullptr;

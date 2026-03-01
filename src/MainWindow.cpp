@@ -224,19 +224,30 @@ void MainWindow::buildUI() {
     v->addWidget(modeTabs_);
     connect(modeTabs_, &QTabWidget::currentChanged, this, &MainWindow::onModeTabChanged);
 
-    viewsHost_ = new QWidget(this);
-    viewsGrid_ = new QGridLayout(viewsHost_);
-    viewsGrid_->setContentsMargins(0,0,0,0);
-    viewsGrid_->setSpacing(8);
-    viewsHost_->setMinimumSize(960, 540);
-    v->addWidget(viewsHost_, 1);
-    rebuildSourceViews();
+    QHBoxLayout* topSourceBar = new QHBoxLayout();
+    btnAddCam_ = new QToolButton(central);
+    btnAddVideo_ = new QToolButton(central);
+    btnAddImgSeq_ = new QToolButton(central);
+    btnRemoveSource_ = new QToolButton(central);
+    btnAddCam_->setText("AddCamera");
+    btnAddVideo_->setText("AddVideo");
+    btnAddImgSeq_->setText("AddImageSeq");
+    btnRemoveSource_->setText("Remove");
+    btnAddCam_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    btnAddVideo_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    btnAddImgSeq_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    btnRemoveSource_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    btnAddCam_->setIcon(style()->standardIcon(QStyle::SP_ComputerIcon));
+    btnAddVideo_->setIcon(style()->standardIcon(QStyle::SP_FileIcon));
+    btnAddImgSeq_->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
+    btnRemoveSource_->setIcon(style()->standardIcon(QStyle::SP_TrashIcon));
+    topSourceBar->addWidget(btnAddCam_);
+    topSourceBar->addWidget(btnAddVideo_);
+    topSourceBar->addWidget(btnAddImgSeq_);
+    topSourceBar->addWidget(btnRemoveSource_);
+    topSourceBar->addStretch(1);
+    v->addLayout(topSourceBar);
 
-    QHBoxLayout* playbar = new QHBoxLayout();
-    btnAddCam_ = new QPushButton("AddCamera", central);
-    btnAddVideo_ = new QPushButton("AddVideo", central);
-    btnAddImgSeq_ = new QPushButton("AddImageSeq", central);
-    btnRemoveSource_ = new QPushButton("Remove", central);
     btnPauseResume_ = new QToolButton(central);
     btnPlayAll_ = new QToolButton(central);
     btnStopAll_ = new QToolButton(central);
@@ -254,13 +265,18 @@ void MainWindow::buildUI() {
     btnStepPrev_->setToolTip("Prev Frame");
     btnStepNext_->setToolTip("Next Frame");
 
-    btnToolPan_ = new QToolButton(central);
-    btnToolPoint_ = new QToolButton(central);
-    btnToolLine_ = new QToolButton(central);
-    btnZoomIn_ = new QToolButton(central);
-    btnZoomOut_ = new QToolButton(central);
-    btnResetView_ = new QToolButton(central);
-    btnClearAnno_ = new QToolButton(central);
+    QWidget* playerToolStrip = new QWidget(central);
+    playerToolStrip->setStyleSheet("background:#2c2f33; border:1px solid #3a3d42; border-radius:2px;");
+    QHBoxLayout* imageToolRow = new QHBoxLayout(playerToolStrip);
+    imageToolRow->setContentsMargins(6, 4, 6, 4);
+    imageToolRow->setSpacing(4);
+    btnToolPan_ = new QToolButton(playerToolStrip);
+    btnToolPoint_ = new QToolButton(playerToolStrip);
+    btnToolLine_ = new QToolButton(playerToolStrip);
+    btnZoomIn_ = new QToolButton(playerToolStrip);
+    btnZoomOut_ = new QToolButton(playerToolStrip);
+    btnResetView_ = new QToolButton(playerToolStrip);
+    btnClearAnno_ = new QToolButton(playerToolStrip);
     btnToolPan_->setText("Pan");
     btnToolPoint_->setText("Point");
     btnToolLine_->setText("Line");
@@ -268,47 +284,49 @@ void MainWindow::buildUI() {
     btnZoomOut_->setText("Zoom-");
     btnResetView_->setText("Reset");
     btnClearAnno_->setText("Clear");
-    lblLineState_ = new QLabel("Line: idle", central);
+    for (QToolButton* b : {btnToolPan_, btnToolPoint_, btnToolLine_, btnZoomIn_, btnZoomOut_, btnResetView_, btnClearAnno_}) {
+      b->setAutoRaise(true);
+      b->setToolButtonStyle(Qt::ToolButtonTextOnly);
+      imageToolRow->addWidget(b);
+    }
+    lblLineState_ = new QLabel("Line: idle", playerToolStrip);
 
     btnToolPan_->setCheckable(true);
     btnToolPoint_->setCheckable(true);
     btnToolLine_->setCheckable(true);
     btnToolPan_->setChecked(true);
+    imageToolRow->addStretch(1);
+    imageToolRow->addWidget(lblLineState_);
 
-    playbar->addWidget(btnAddCam_);
-    playbar->addWidget(btnAddVideo_);
-    playbar->addWidget(btnAddImgSeq_);
-    playbar->addWidget(btnRemoveSource_);
-    playbar->addWidget(btnPauseResume_);
-    playbar->addWidget(btnPlayAll_);
-    playbar->addWidget(btnStopAll_);
-    playbar->addWidget(btnStepPrev_);
-    playbar->addWidget(btnStepNext_);
-    playbar->addSpacing(16);
-    v->addLayout(playbar);
+    v->addWidget(playerToolStrip);
 
-    QHBoxLayout* imageToolRow = new QHBoxLayout();
-    imageToolRow->addWidget(btnToolPan_);
-    imageToolRow->addWidget(btnToolPoint_);
-    imageToolRow->addWidget(btnToolLine_);
-    imageToolRow->addWidget(btnZoomIn_);
-    imageToolRow->addWidget(btnZoomOut_);
-    imageToolRow->addWidget(btnResetView_);
-    imageToolRow->addWidget(btnClearAnno_);
-    imageToolRow->addWidget(lblLineState_, 1);
-    v->addLayout(imageToolRow);
+    viewsHost_ = new QWidget(this);
+    viewsGrid_ = new QGridLayout(viewsHost_);
+    viewsGrid_->setContentsMargins(0,0,0,0);
+    viewsGrid_->setSpacing(8);
+    viewsHost_->setMinimumSize(960, 540);
+    v->addWidget(viewsHost_, 1);
+    rebuildSourceViews();
 
-    QHBoxLayout* progressRow = new QHBoxLayout();
-    progressRow->addWidget(new QLabel("Progress", central));
+    QHBoxLayout* playProgressRow = new QHBoxLayout();
+    playProgressRow->addWidget(btnPauseResume_);
+    playProgressRow->addWidget(btnPlayAll_);
+    playProgressRow->addWidget(btnStopAll_);
+    playProgressRow->addWidget(btnStepPrev_);
+    playProgressRow->addWidget(btnStepNext_);
+    playProgressRow->addSpacing(10);
+    playProgressRow->addWidget(new QLabel("Progress", central));
     progressSlider_ = new QSlider(Qt::Horizontal, central);
     progressSlider_->setRange(0, 0);
     progressSlider_->setSingleStep(1);
     progressSlider_->setPageStep(30);
+    progressSlider_->setMaximumWidth(320);
     lblProgress_ = new QLabel("0 / 0", central);
     lblProgress_->setMinimumWidth(110);
-    progressRow->addWidget(progressSlider_, 1);
-    progressRow->addWidget(lblProgress_);
-    v->addLayout(progressRow);
+    playProgressRow->addWidget(progressSlider_);
+    playProgressRow->addWidget(lblProgress_);
+    playProgressRow->addStretch(1);
+    v->addLayout(playProgressRow);
 
     QHBoxLayout* pbtns = new QHBoxLayout();
     btnSaveProject_ = new QPushButton("Save Project", central);
@@ -320,10 +338,10 @@ void MainWindow::buildUI() {
 
     setCentralWidget(central);
 
-    connect(btnAddCam_, &QPushButton::clicked, this, &MainWindow::onAddCamera);
-    connect(btnAddVideo_, &QPushButton::clicked, this, &MainWindow::onAddVideo);
-    connect(btnAddImgSeq_, &QPushButton::clicked, this, &MainWindow::onAddImageSequence);
-    connect(btnRemoveSource_, &QPushButton::clicked, this, &MainWindow::onRemoveSource);
+    connect(btnAddCam_, &QToolButton::clicked, this, &MainWindow::onAddCamera);
+    connect(btnAddVideo_, &QToolButton::clicked, this, &MainWindow::onAddVideo);
+    connect(btnAddImgSeq_, &QToolButton::clicked, this, &MainWindow::onAddImageSequence);
+    connect(btnRemoveSource_, &QToolButton::clicked, this, &MainWindow::onRemoveSource);
     connect(btnPauseResume_, &QToolButton::clicked, this, &MainWindow::onPauseResumeSelected);
     connect(btnPlayAll_, &QToolButton::clicked, this, &MainWindow::onPlayAll);
     connect(btnStopAll_, &QToolButton::clicked, this, &MainWindow::onStopAll);
