@@ -255,11 +255,6 @@ void MainWindow::buildUI() {
     topSourceBar->addWidget(btnAddVideo_);
     topSourceBar->addWidget(btnAddImgSeq_);
     topSourceBar->addWidget(btnRemoveSource_);
-    topSourceBar->addSpacing(10);
-    btnSaveProject_ = new QPushButton("Save Project", central);
-    btnLoadProject_ = new QPushButton("Load Project", central);
-    topSourceBar->addWidget(btnSaveProject_);
-    topSourceBar->addWidget(btnLoadProject_);
     topSourceBar->addStretch(1);
     v->addLayout(topSourceBar);
 
@@ -325,8 +320,11 @@ void MainWindow::buildUI() {
     connect(btnStepNext_, &QToolButton::clicked, this, &MainWindow::onStepNextFrame);
     connect(progressSlider_, &QSlider::sliderReleased, this, &MainWindow::onProgressSliderReleased);
     connect(editCurFrame_, &QLineEdit::returnPressed, this, &MainWindow::onFrameJumpReturnPressed);
-    connect(btnSaveProject_, &QPushButton::clicked, this, &MainWindow::onSaveProject);
-    connect(btnLoadProject_, &QPushButton::clicked, this, &MainWindow::onLoadProject);
+    QMenu* fileMenu = menuBar()->addMenu("File");
+    actSaveProject_ = fileMenu->addAction("Save Project...");
+    actLoadProject_ = fileMenu->addAction("Load Project...");
+    connect(actSaveProject_, &QAction::triggered, this, &MainWindow::onSaveProject);
+    connect(actLoadProject_, &QAction::triggered, this, &MainWindow::onLoadProject);
 
     // Right dock: actions + log
     QDockWidget* dock = new QDockWidget("Actions", this);
@@ -341,8 +339,11 @@ void MainWindow::buildUI() {
     QWidget* tabCap = new QWidget(actionTabs_);
     QVBoxLayout* capv = new QVBoxLayout(tabCap);
     capv->addWidget(new QLabel("Live capture source management", tabCap));
+    btnCaptureNow_ = new QPushButton("Capture", tabCap);
     capv->addWidget(btnAddCam_);
+    capv->addWidget(btnCaptureNow_);
     capv->addStretch(1);
+    connect(btnCaptureNow_, &QPushButton::clicked, this, &MainWindow::onCaptureNow);
 
     // Calibration tab
     QWidget* tabCal = new QWidget(actionTabs_);
@@ -512,6 +513,7 @@ void MainWindow::buildUI() {
     lblResolution_ = new QLabel("Resolution: -", this);
     statusBar()->addPermanentWidget(lblResolution_);
 
+    onModeCapture();
     statusBar()->showMessage("Ready");
     refreshSourceList();
     // Per-source docks are OFF by default to avoid duplicate display.
@@ -896,6 +898,9 @@ void MainWindow::onRemoveSource() {
 
 void MainWindow::onModeCalibration() {
   mode_ = CALIB;
+  if (btnAddCam_) btnAddCam_->setVisible(false);
+  if (btnAddVideo_) btnAddVideo_->setVisible(true);
+  if (btnAddImgSeq_) btnAddImgSeq_->setVisible(true);
   if (modeTabs_ && modeTabs_->currentIndex()!=1) modeTabs_->setCurrentIndex(1);
   if (actionTabs_) actionTabs_->setCurrentIndex(1);
   rebuildSourceViews();
@@ -905,6 +910,9 @@ void MainWindow::onModeCalibration() {
 
 void MainWindow::onModeTracking() {
   mode_ = TRACK;
+  if (btnAddCam_) btnAddCam_->setVisible(false);
+  if (btnAddVideo_) btnAddVideo_->setVisible(true);
+  if (btnAddImgSeq_) btnAddImgSeq_->setVisible(true);
   if (modeTabs_ && modeTabs_->currentIndex()!=2) modeTabs_->setCurrentIndex(2);
   if (actionTabs_) actionTabs_->setCurrentIndex(2);
   rebuildSourceViews();
@@ -914,11 +922,38 @@ void MainWindow::onModeTracking() {
 
 void MainWindow::onModeCapture() {
   mode_ = CAPTURE;
+  if (btnAddCam_) btnAddCam_->setVisible(true);
+  if (btnAddVideo_) btnAddVideo_->setVisible(false);
+  if (btnAddImgSeq_) btnAddImgSeq_->setVisible(false);
   if (modeTabs_ && modeTabs_->currentIndex()!=0) modeTabs_->setCurrentIndex(0);
   if (actionTabs_) actionTabs_->setCurrentIndex(0);
   rebuildSourceViews();
   updateSourceViews(last_frames_);
   logLine("Switched to Capture mode.");
+}
+
+void MainWindow::onCaptureNow() {
+  stopCaptureBlocking();
+  {
+    QMutexLocker srcLock(&sources_mutex_);
+    if ((int)last_frames_.size() < (int)sources_.size()) last_frames_.resize(sources_.size());
+    for (int i=0;i<(int)sources_.size();++i) {
+      auto& s = sources_[i];
+      if (s.mode_owner != (int)CAPTURE) continue;
+      cv::Mat f;
+      if (s.is_image_seq) {
+        if (!s.seq_files.isEmpty()) {
+          int idx = std::max(0, std::min(s.seq_idx, s.seq_files.size()-1));
+          f = cv::imread(s.seq_files[idx].toStdString(), cv::IMREAD_COLOR);
+        }
+      } else if (s.cap.isOpened()) {
+        s.cap.read(f);
+      }
+      if (!f.empty()) last_frames_[i] = f;
+    }
+  }
+  updateSourceViews(last_frames_);
+  logLine("Capture snapshot updated.");
 }
 
 void MainWindow::onModeTabChanged(int idx) {
@@ -1371,6 +1406,8 @@ void MainWindow::onComputeCalibration() {
     frameId++;
 
     if (calibProgressBar_ && totalFrames > 0) calibProgressBar_->setValue(std::min(frameId, totalFrames));
+    play_frame_ = std::max<int64_t>(0, frameId - 1);
+    updateProgressUI(play_frame_, std::max<int64_t>(1, totalFrames));
     if (lblCalibProgress_) lblCalibProgress_->setText(QString("Progress: scanning %1 / %2").arg(frameId).arg(std::max(totalFrames, frameId)));
     QApplication::processEvents();
   }

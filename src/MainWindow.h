@@ -105,6 +105,7 @@ private slots:
   void onAddCamera();
   void onAddVideo();
   void onAddImageSequence();
+  void onCaptureNow();
   void onRemoveSource();
   void onPauseResumeSelected();
   void onPlayAll();
@@ -244,6 +245,7 @@ private:
   QToolButton* btnAddCam_=nullptr;
   QToolButton* btnAddVideo_=nullptr;
   QToolButton* btnAddImgSeq_=nullptr;
+  QPushButton* btnCaptureNow_=nullptr;
   QToolButton* btnRemoveSource_=nullptr;
   QToolButton* btnPlayAll_=nullptr;
   QToolButton* btnStopAll_=nullptr;
@@ -264,9 +266,6 @@ private:
   QLabel* lblResolution_=nullptr;
   //QCheckBox* chkSyncPlay_=nullptr;
   //QLabel* lblPlayState_=nullptr;
-  QPushButton* btnSaveProject_=nullptr;
-  QPushButton* btnLoadProject_=nullptr;
-
   QPushButton* btnModeCalib_=nullptr;
   QPushButton* btnModeTrack_=nullptr;
   QTabWidget* actionTabs_=nullptr;
