@@ -223,9 +223,13 @@ void MainWindow::buildUI() {
     connect(btnModeCalib_, &QPushButton::clicked, this, &MainWindow::onModeCalibration);
     connect(btnModeTrack_, &QPushButton::clicked, this, &MainWindow::onModeTracking);
 
-    viewer_ = new ImageViewer(this);
-    viewer_->setMinimumSize(960, 540);
-    v->addWidget(viewer_, 1);
+    viewsHost_ = new QWidget(this);
+    viewsGrid_ = new QGridLayout(viewsHost_);
+    viewsGrid_->setContentsMargins(0,0,0,0);
+    viewsGrid_->setSpacing(8);
+    viewsHost_->setMinimumSize(960, 540);
+    v->addWidget(viewsHost_, 1);
+    rebuildSourceViews();
 
     QHBoxLayout* playbar = new QHBoxLayout();
     btnAddCam_ = new QPushButton("AddCamera", central);
@@ -308,7 +312,6 @@ void MainWindow::buildUI() {
     connect(btnResetView_, &QPushButton::clicked, this, &MainWindow::onResetView);
     connect(btnClearAnno_, &QPushButton::clicked, this, &MainWindow::onClearAnnotations);
     connect(progressSlider_, &QSlider::sliderReleased, this, &MainWindow::onProgressSliderReleased);
-    connect(viewer_, &ImageViewer::linePreviewText, lblLineState_, &QLabel::setText);
     connect(btnSaveProject_, &QPushButton::clicked, this, &MainWindow::onSaveProject);
     connect(btnLoadProject_, &QPushButton::clicked, this, &MainWindow::onLoadProject);
 
@@ -488,6 +491,53 @@ void MainWindow::refreshSourceList() {
   if (!status.isEmpty()) statusBar()->showMessage(QString("Sources: %1").arg(status.join(" | ")));
 }
 
+void MainWindow::rebuildSourceViews() {
+  if (!viewsGrid_) return;
+
+  while (QLayoutItem* item = viewsGrid_->takeAt(0)) {
+    if (item->widget()) item->widget()->deleteLater();
+    delete item;
+  }
+  sourceViews_.clear();
+
+  const int n = (int)sources_.size();
+  if (n <= 0) {
+    QLabel* hint = new QLabel("No sources. Click AddVideo to create a viewer.", viewsHost_);
+    hint->setAlignment(Qt::AlignCenter);
+    hint->setStyleSheet("background-color:#111; border:1px solid #333; color:#ddd;");
+    hint->setMinimumSize(960, 540);
+    viewsGrid_->addWidget(hint, 0, 0);
+    return;
+  }
+
+  int cols = (n <= 1) ? 1 : 2;
+  for (int i=0; i<n; ++i) {
+    ImageViewer* v = new ImageViewer(viewsHost_);
+    v->setMinimumSize(480, 270);
+    v->setToolMode(ImageViewer::PanTool);
+    connect(v, &ImageViewer::linePreviewText, lblLineState_, &QLabel::setText);
+    sourceViews_.push_back(v);
+    int r = i / cols;
+    int c = i % cols;
+    viewsGrid_->addWidget(v, r, c);
+  }
+}
+
+void MainWindow::updateSourceViews(const std::vector<cv::Mat>& frames) {
+  int n = std::min((int)sourceViews_.size(), (int)frames.size());
+  for (int i=0; i<n; ++i) {
+    if (!sourceViews_[i]) continue;
+    if (frames[i].empty()) {
+      sourceViews_[i]->setImage(QImage());
+      continue;
+    }
+    sourceViews_[i]->setImage(matToQImage(frames[i]));
+  }
+  for (int i=n; i<(int)sourceViews_.size(); ++i) {
+    if (sourceViews_[i]) sourceViews_[i]->setImage(QImage());
+  }
+}
+
 void MainWindow::rebuildCalibratorFromUI(bool reset) {
   board_w_ = spBoardW_ ? spBoardW_->value() : board_w_;
   board_h_ = spBoardH_ ? spBoardH_->value() : board_h_;
@@ -586,6 +636,7 @@ void MainWindow::onAddVideo()
     calibrator_.reset(new MultiCamCalibrator(std::max(1,num_cams_), cv::Size(board_w_, board_h_), square_));
     refreshSourceList();
     if (show_docks_) rebuildSourceDocks();
+    rebuildSourceViews();
     logLine(QString("Added video: %1").arg(path));
     timer_.start(33);
     if (captureWorker_) QMetaObject::invokeMethod(captureWorker_, "start", Qt::QueuedConnection);
@@ -606,6 +657,7 @@ void MainWindow::onRemoveSource() {
   calibrator_.reset(new MultiCamCalibrator(std::max(1,num_cams_), cv::Size(board_w_, board_h_), square_));
   refreshSourceList();
   if (show_docks_) rebuildSourceDocks();
+  rebuildSourceViews();
   logLine("Removed source.");
   timer_.start(33);
   if (captureWorker_) QMetaObject::invokeMethod(captureWorker_, "start", Qt::QueuedConnection);
@@ -737,7 +789,7 @@ void MainWindow::updateStatus() {
 void MainWindow::onTick() {
   // UI refresh at a steady rate; frames arrive from CaptureWorker
   if (sources_.empty()) {
-    if (viewer_) viewer_->setImage(QImage());
+    updateSourceViews(std::vector<cv::Mat>());
     updateStatus();
     return;
   }
@@ -768,11 +820,7 @@ void MainWindow::onTick() {
     else overlayTracking(vis, frames);
   }
 
-  cv::Mat mosaic = makeMosaic(vis, 2);
-  if (!mosaic.empty()) {
-    QImage img = matToQImage(mosaic);
-    if (viewer_) viewer_->setImage(img);
-  }
+  updateSourceViews(vis);
 
   if (show_docks_) updateSourceDocks(frames);
   updateStatus();
@@ -875,6 +923,7 @@ bool MainWindow::fromProjectJson(const QJsonObject& o) {
   last_frames_.resize(std::max(0,num_cams_));
   calibrator_.reset(new MultiCamCalibrator(std::max(1,num_cams_), cv::Size(board_w_, board_h_), square_));
   refreshSourceList();
+  rebuildSourceViews();
   timer_.start(33);
   if (captureWorker_) QMetaObject::invokeMethod(captureWorker_, "start", Qt::QueuedConnection);
 
@@ -1327,27 +1376,27 @@ void MainWindow::onToolPan() {
   btnToolPan_->setChecked(true);
   btnToolPoint_->setChecked(false);
   btnToolLine_->setChecked(false);
-  if (viewer_) viewer_->setToolMode(ImageViewer::PanTool);
+  for (auto* v : sourceViews_) if (v) v->setToolMode(ImageViewer::PanTool);
 }
 
 void MainWindow::onToolPoint() {
   btnToolPan_->setChecked(false);
   btnToolPoint_->setChecked(true);
   btnToolLine_->setChecked(false);
-  if (viewer_) viewer_->setToolMode(ImageViewer::PointTool);
+  for (auto* v : sourceViews_) if (v) v->setToolMode(ImageViewer::PointTool);
 }
 
 void MainWindow::onToolLine() {
   btnToolPan_->setChecked(false);
   btnToolPoint_->setChecked(false);
   btnToolLine_->setChecked(true);
-  if (viewer_) viewer_->setToolMode(ImageViewer::LineTool);
+  for (auto* v : sourceViews_) if (v) v->setToolMode(ImageViewer::LineTool);
 }
 
-void MainWindow::onZoomIn() { if (viewer_) viewer_->zoomIn(); }
-void MainWindow::onZoomOut() { if (viewer_) viewer_->zoomOut(); }
-void MainWindow::onResetView() { if (viewer_) viewer_->resetView(); }
-void MainWindow::onClearAnnotations() { if (viewer_) viewer_->clearAnnotations(); }
+void MainWindow::onZoomIn() { for (auto* v : sourceViews_) if (v) v->zoomIn(); }
+void MainWindow::onZoomOut() { for (auto* v : sourceViews_) if (v) v->zoomOut(); }
+void MainWindow::onResetView() { for (auto* v : sourceViews_) if (v) v->resetView(); }
+void MainWindow::onClearAnnotations() { for (auto* v : sourceViews_) if (v) v->clearAnnotations(); }
 
 void MainWindow::onProgressSliderReleased() {
   if (!progressSlider_) return;

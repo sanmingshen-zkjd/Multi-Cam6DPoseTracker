@@ -140,6 +140,8 @@ private:
   void refreshSourceList();
   void rebuildSourceDocks();
   void updateSourceDocks(const std::vector<cv::Mat>& frames);
+  void rebuildSourceViews();
+  void updateSourceViews(const std::vector<cv::Mat>& frames);
   void stopCaptureBlocking();
   void updatePlaybackParams();
   void stepAllVideos(int delta);
@@ -197,7 +199,9 @@ private:
   enum Mode { CALIB=0, TRACK=1 } mode_=CALIB;
 
   // UI widgets
-  ImageViewer* viewer_=nullptr;
+  QWidget* viewsHost_=nullptr;
+  QGridLayout* viewsGrid_=nullptr;
+  std::vector<ImageViewer*> sourceViews_;
   QTextEdit* log_=nullptr;
 
   // Per-source dock views
