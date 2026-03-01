@@ -22,7 +22,6 @@
 #include <QTabBar>
 #include <QStyle>
 #include <QFrame>
-#include <QProgressDialog>
 #include <QIntValidator>
 
 static QString nowStr() {
@@ -229,6 +228,7 @@ void MainWindow::buildUI() {
 
     // Top mode tabs
     modeTabs_ = new QTabWidget(central);
+    modeTabs_->addTab(new QWidget(modeTabs_), "Capture");
     modeTabs_->addTab(new QWidget(modeTabs_), "Calibration");
     modeTabs_->addTab(new QWidget(modeTabs_), "Tracking");
     modeTabs_->setCurrentIndex(0);
@@ -252,7 +252,6 @@ void MainWindow::buildUI() {
     btnAddVideo_->setIcon(style()->standardIcon(QStyle::SP_FileIcon));
     btnAddImgSeq_->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
     btnRemoveSource_->setIcon(style()->standardIcon(QStyle::SP_TrashIcon));
-    topSourceBar->addWidget(btnAddCam_);
     topSourceBar->addWidget(btnAddVideo_);
     topSourceBar->addWidget(btnAddImgSeq_);
     topSourceBar->addWidget(btnRemoveSource_);
@@ -269,19 +268,17 @@ void MainWindow::buildUI() {
     topSep->setFrameShadow(QFrame::Sunken);
     v->addWidget(topSep);
 
-    btnPauseResume_ = new QToolButton(central);
     btnPlayAll_ = new QToolButton(central);
     btnStopAll_ = new QToolButton(central);
     btnStepPrev_ = new QToolButton(central);
     btnStepNext_ = new QToolButton(central);
 
     btnPlayAll_->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
-    btnPauseResume_->setIcon(style()->standardIcon(QStyle::SP_MediaPause));
+    btnPlayAll_->setCheckable(true);
     btnStopAll_->setIcon(style()->standardIcon(QStyle::SP_MediaStop));
     btnStepPrev_->setIcon(style()->standardIcon(QStyle::SP_MediaSkipBackward));
     btnStepNext_->setIcon(style()->standardIcon(QStyle::SP_MediaSkipForward));
-    btnPlayAll_->setToolTip("Play");
-    btnPauseResume_->setToolTip("Pause/Resume");
+    btnPlayAll_->setToolTip("Play/Pause");
     btnStopAll_->setToolTip("Stop");
     btnStepPrev_->setToolTip("Prev Frame");
     btnStepNext_->setToolTip("Next Frame");
@@ -297,7 +294,6 @@ void MainWindow::buildUI() {
     rebuildSourceViews();
 
     QHBoxLayout* playProgressRow = new QHBoxLayout();
-    playProgressRow->addWidget(btnPauseResume_);
     playProgressRow->addWidget(btnPlayAll_);
     playProgressRow->addWidget(btnStopAll_);
     playProgressRow->addWidget(btnStepPrev_);
@@ -323,7 +319,6 @@ void MainWindow::buildUI() {
     connect(btnAddVideo_, &QToolButton::clicked, this, &MainWindow::onAddVideo);
     connect(btnAddImgSeq_, &QToolButton::clicked, this, &MainWindow::onAddImageSequence);
     connect(btnRemoveSource_, &QToolButton::clicked, this, &MainWindow::onRemoveSource);
-    connect(btnPauseResume_, &QToolButton::clicked, this, &MainWindow::onPauseResumeSelected);
     connect(btnPlayAll_, &QToolButton::clicked, this, &MainWindow::onPlayAll);
     connect(btnStopAll_, &QToolButton::clicked, this, &MainWindow::onStopAll);
     connect(btnStepPrev_, &QToolButton::clicked, this, &MainWindow::onStepPrevFrame);
@@ -341,6 +336,13 @@ void MainWindow::buildUI() {
     QVBoxLayout* dv = new QVBoxLayout(dockw);
 
     actionTabs_ = new QTabWidget(dockw);
+
+    // Capture tab
+    QWidget* tabCap = new QWidget(actionTabs_);
+    QVBoxLayout* capv = new QVBoxLayout(tabCap);
+    capv->addWidget(new QLabel("Live capture source management", tabCap));
+    capv->addWidget(btnAddCam_);
+    capv->addStretch(1);
 
     // Calibration tab
     QWidget* tabCal = new QWidget(actionTabs_);
@@ -383,6 +385,8 @@ void MainWindow::buildUI() {
 
     btnGrab_ = new QPushButton("Grab Frame (Chessboard)", tabCal);
     btnReset_ = new QPushButton("Reset Captures", tabCal);
+    btnGrab_->setVisible(false);
+    btnReset_->setVisible(false);
     btnComputeCalib_ = new QPushButton("Compute Calibration", tabCal);
     btnRecomputeCalib_ = new QPushButton("Recompute (Selected Frames)", tabCal);
     btnSaveCalib_ = new QPushButton("Save rig_calib.yaml", tabCal);
@@ -405,8 +409,6 @@ void MainWindow::buildUI() {
 
     calv->addWidget(gbMethod);
     calv->addWidget(gbBoard);
-    calv->addWidget(btnGrab_);
-    calv->addWidget(btnReset_);
     calv->addWidget(btnComputeCalib_);
     calv->addWidget(btnRecomputeCalib_);
     calv->addWidget(btnSaveCalib_);
@@ -489,6 +491,7 @@ void MainWindow::buildUI() {
     connect(spInlierThresh_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double v){ inlier_thresh_px_=v; if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, pose_on_); });
     connect(cbTagDict_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int){ tag_dict_id_=cbTagDict_->currentData().toInt(); if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, pose_on_); });
 
+    actionTabs_->addTab(tabCap, "Capture");
     actionTabs_->addTab(tabCal, "Calibration");
     actionTabs_->addTab(tabTrk, "Tracking");
     // Right-side parameters must follow left mode; hide tab labels completely.
@@ -550,7 +553,10 @@ void MainWindow::refreshSourceList() {
     else if (s.is_image_seq) label = QString("ImgSeq:%1").arg(QFileInfo(s.seq_dir).fileName());
     else label = QFileInfo(s.video_path).fileName();
     bool en = (i < (int)source_enabled_.size()) ? source_enabled_[i] : true;
-    label += (s.mode_owner==0 ? "{Calib}" : "{Track}");
+    QString owner = "{Capture}";
+    if (s.mode_owner == (int)CALIB) owner = "{Calib}";
+    else if (s.mode_owner == (int)TRACK) owner = "{Track}";
+    label += owner;
     label += en ? "[RUN]" : "[PAUSED]";
     status << label;
   }
@@ -702,14 +708,18 @@ void MainWindow::rebuildCalibratorFromUI(bool reset) {
 
 // ---------------- Sources actions ----------------
 void MainWindow::onAddCamera() {
-#if 0
   bool ok=false;
   int camId = QInputDialog::getInt(this, "Add Camera", "Camera index:", 0, 0, 64, 1, &ok);
   if (!ok) return;
+  if (mode_ != CAPTURE) {
+    QMessageBox::information(this, "Add Camera", "Please switch to Capture tab to add camera sources.");
+    return;
+  }
 
   InputSource s;
   s.is_cam = true;
   s.cam_id = camId;
+  s.mode_owner = (int)CAPTURE;
 
   // Try open immediately
   s.cap.open(camId);
@@ -726,10 +736,12 @@ void MainWindow::onAddCamera() {
   num_cams_ = (int)sources_.size();
   // Do NOT auto-play on import
   if ((int)source_enabled_.size() < num_cams_) source_enabled_.resize(num_cams_, true);
-  source_enabled_[num_cams_-1] = false;
+  source_enabled_[num_cams_-1] = true;
   if ((int)last_frames_.size() < num_cams_) last_frames_.resize(num_cams_);
   cv::Mat firstFrame;
-  s.cap.read(firstFrame);
+  if (!sources_.empty() && sources_.back().cap.isOpened()) {
+    sources_.back().cap.read(firstFrame);
+  }
   last_frames_[num_cams_ - 1] = firstFrame.clone();
   source_enabled_.assign(std::max(0,num_cams_), true);
   // last_frames_ will be populated by CaptureWorker when frames arrive.
@@ -738,7 +750,8 @@ void MainWindow::onAddCamera() {
   calibrator_.reset(new MultiCamCalibrator(std::max(1,num_cams_), cv::Size(board_w_, board_h_), square_));
   refreshSourceList();
   if (show_docks_) rebuildSourceDocks();
-#endif
+  rebuildSourceViews();
+  updateSourceViews(last_frames_);
 }
 
 void MainWindow::onAddVideo() 
@@ -874,8 +887,8 @@ void MainWindow::onRemoveSource() {
 
 void MainWindow::onModeCalibration() {
   mode_ = CALIB;
-  if (modeTabs_ && modeTabs_->currentIndex()!=0) modeTabs_->setCurrentIndex(0);
-  if (actionTabs_) actionTabs_->setCurrentIndex(0);
+  if (modeTabs_ && modeTabs_->currentIndex()!=1) modeTabs_->setCurrentIndex(1);
+  if (actionTabs_) actionTabs_->setCurrentIndex(1);
   rebuildSourceViews();
   updateSourceViews(last_frames_);
   logLine("Switched to Calibration mode.");
@@ -883,15 +896,25 @@ void MainWindow::onModeCalibration() {
 
 void MainWindow::onModeTracking() {
   mode_ = TRACK;
-  if (modeTabs_ && modeTabs_->currentIndex()!=1) modeTabs_->setCurrentIndex(1);
-  if (actionTabs_) actionTabs_->setCurrentIndex(1);
+  if (modeTabs_ && modeTabs_->currentIndex()!=2) modeTabs_->setCurrentIndex(2);
+  if (actionTabs_) actionTabs_->setCurrentIndex(2);
   rebuildSourceViews();
   updateSourceViews(last_frames_);
   logLine("Switched to Tracking mode.");
 }
 
+void MainWindow::onModeCapture() {
+  mode_ = CAPTURE;
+  if (modeTabs_ && modeTabs_->currentIndex()!=0) modeTabs_->setCurrentIndex(0);
+  if (actionTabs_) actionTabs_->setCurrentIndex(0);
+  rebuildSourceViews();
+  updateSourceViews(last_frames_);
+  logLine("Switched to Capture mode.");
+}
+
 void MainWindow::onModeTabChanged(int idx) {
-  if (idx == 0) onModeCalibration();
+  if (idx == 0) onModeCapture();
+  else if (idx == 1) onModeCalibration();
   else onModeTracking();
 }
 
@@ -1306,10 +1329,6 @@ void MainWindow::onComputeCalibration() {
 
   int frameId = 0;
   MultiCamCalibrator previewCalib(2, cv::Size(board_w_, board_h_), square_);
-  QProgressDialog scanProgress("Scanning frames for calibration...", QString(), 0, std::max(1, totalFrames), this);
-  scanProgress.setWindowModality(Qt::ApplicationModal);
-  scanProgress.setCancelButton(nullptr);
-  scanProgress.setMinimumDuration(0);
   while (true) {
     cv::Mat a, b;
     {
@@ -1343,11 +1362,9 @@ void MainWindow::onComputeCalibration() {
     frameId++;
 
     if (calibProgressBar_ && totalFrames > 0) calibProgressBar_->setValue(std::min(frameId, totalFrames));
-    scanProgress.setValue(std::min(frameId, std::max(1, totalFrames)));
     if (lblCalibProgress_) lblCalibProgress_->setText(QString("Progress: scanning %1 / %2").arg(frameId).arg(std::max(totalFrames, frameId)));
     QApplication::processEvents();
   }
-  scanProgress.setValue(std::max(1, totalFrames));
 
   if (calib_pairs_.empty()) {
     QMessageBox::warning(this, "Calibration", "No frame pairs found from the selected sources.");
@@ -1385,10 +1402,6 @@ bool MainWindow::runCalibrationOnPairs(const std::vector<int>& pairIndices, bool
   if (lblCalibProgress_) lblCalibProgress_->setText("Progress: detecting chessboard...");
 
   MultiCamCalibrator workCalib(2, cv::Size(board_w_, board_h_), square_);
-  QProgressDialog detectProgress("Detecting chessboards in selected frames...", QString(), 0, std::max(1, (int)pairIndices.size()), this);
-  detectProgress.setWindowModality(Qt::ApplicationModal);
-  detectProgress.setCancelButton(nullptr);
-  detectProgress.setMinimumDuration(0);
   std::vector<cv::Size> sizes;
   bool sizesSet = false;
   int usedPairs = 0;
@@ -1407,10 +1420,8 @@ bool MainWindow::runCalibrationOnPairs(const std::vector<int>& pairIndices, bool
       acceptedPairIds.push_back(id);
     }
     if (calibProgressBar_) calibProgressBar_->setValue(i + 1);
-    detectProgress.setValue(i + 1);
     QApplication::processEvents();
   }
-  detectProgress.setValue(std::max(1, (int)pairIndices.size()));
 
   if (usedPairs <= 0 || !sizesSet) {
     QMessageBox::warning(this, "Calibration", "No valid chessboard pairs found in selected frames.");
@@ -1418,21 +1429,13 @@ bool MainWindow::runCalibrationOnPairs(const std::vector<int>& pairIndices, bool
   }
 
   if (lblCalibProgress_) lblCalibProgress_->setText("Progress: solving calibration...");
-  QProgressDialog solveProgress("Solving calibration...", QString(), 0, 0, this);
-  solveProgress.setWindowModality(Qt::ApplicationModal);
-  solveProgress.setCancelButton(nullptr);
-  solveProgress.setMinimumDuration(0);
-  solveProgress.show();
-  QApplication::processEvents();
   double rms=0.0;
   std::vector<CameraModel> out;
   if (!workCalib.calibrate(sizes, out, rms)) {
-    solveProgress.close();
     QMessageBox::warning(this, "Calibration", "Calibration failed. Ensure enough captures and paired frames with cam0.");
     logLine("Calibration failed.");
     return false;
   }
-  solveProgress.close();
 
   std::vector<double> selectedRmse;
   workCalib.computeFrameReprojErrors(out, selectedRmse);
@@ -1940,7 +1943,26 @@ void MainWindow::onFrameJumpReturnPressed() {
 }
 
 void MainWindow::onPlayAll() {
-  // Requirement: import video does NOT auto-play; start only when >=2 videos or user presses Play
+  if (playback_running_) {
+    playback_running_ = false;
+    stopCaptureBlocking();
+    {
+      QMutexLocker srcLock(&sources_mutex_);
+      for (int i=0;i<(int)sources_.size();++i) {
+        if (!sources_[i].is_cam && sources_[i].mode_owner==(int)mode_) source_enabled_[i] = false;
+      }
+    }
+    if (btnPlayAll_) {
+      btnPlayAll_->setChecked(false);
+      btnPlayAll_->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
+      btnPlayAll_->setToolTip("Play");
+    }
+    logLine("Playback paused.");
+    refreshSourceList();
+    return;
+  }
+
+  // Start playback when user presses Play.
   int vidN = videoSourceCount();
   if (vidN < 2) {
     QMessageBox::information(this, "Play", "Need at least 2 video sources for synchronized playback.");
@@ -1954,17 +1976,13 @@ void MainWindow::onPlayAll() {
     // Enable all video sources for playback
     for (int i=0;i<(int)sources_.size();++i) if (!sources_[i].is_cam && sources_[i].mode_owner==(int)mode_) source_enabled_[i]=true;
 
-    // Rewind all videos to frame 0 for perfect sync
-    for (auto& s : sources_) {
-      if (s.is_cam || s.mode_owner!=(int)mode_) continue;
-      if (s.is_image_seq) { s.seq_idx = 0; continue; }
-      if (s.cap.isOpened()) {
-        s.cap.set(cv::CAP_PROP_POS_FRAMES, 0);
-      }
-    }
   }
-  play_frame_ = 0;
   playback_running_ = true;
+  if (btnPlayAll_) {
+    btnPlayAll_->setChecked(true);
+    btnPlayAll_->setIcon(style()->standardIcon(QStyle::SP_MediaPause));
+    btnPlayAll_->setToolTip("Pause");
+  }
   updateProgressUI(play_frame_, play_end_frame_);
   //if (lblPlayState_) 
   //    lblPlayState_->setText("State: PLAY (SYNC)");
@@ -1976,6 +1994,11 @@ void MainWindow::onPlayAll() {
 
 void MainWindow::onStopAll() {
   playback_running_ = false;
+  if (btnPlayAll_) {
+    btnPlayAll_->setChecked(false);
+    btnPlayAll_->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
+    btnPlayAll_->setToolTip("Play");
+  }
   //if (lblPlayState_) lblPlayState_->setText("State: STOP");
   stopCaptureBlocking();
   updateProgressUI(play_frame_, play_end_frame_);

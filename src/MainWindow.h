@@ -146,6 +146,7 @@ private slots:
   // UI mode
   void onModeCalibration();
   void onModeTracking();
+  void onModeCapture();
   void onModeTabChanged(int idx);
 
 private:
@@ -215,7 +216,7 @@ private:
   qint64 last_tick_ms_=0;
 
   // Mode
-  enum Mode { CALIB=0, TRACK=1 } mode_=CALIB;
+  enum Mode { CAPTURE=0, CALIB=1, TRACK=2 } mode_=CAPTURE;
 
   // UI widgets
   QTabWidget* modeTabs_=nullptr;
@@ -244,7 +245,6 @@ private:
   QToolButton* btnAddVideo_=nullptr;
   QToolButton* btnAddImgSeq_=nullptr;
   QToolButton* btnRemoveSource_=nullptr;
-  QToolButton* btnPauseResume_=nullptr;
   QToolButton* btnPlayAll_=nullptr;
   QToolButton* btnStopAll_=nullptr;
   QToolButton* btnStepPrev_=nullptr;
