@@ -29,6 +29,7 @@
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QSlider>
+#include <QStringList>
 
 #include <opencv2/opencv.hpp>
 #include "Core.h"
@@ -38,8 +39,12 @@
 
 struct InputSource {
   bool is_cam=false;
+  bool is_image_seq=false;
   int cam_id=-1;
   QString video_path;
+  QString seq_dir;
+  QStringList seq_files;
+  int seq_idx=0;
   cv::VideoCapture cap;
 };
 
@@ -92,6 +97,7 @@ private slots:
   // Sources actions
   void onAddCamera();
   void onAddVideo();
+  void onAddImageSequence();
   void onRemoveSource();
   void onPauseResumeSelected();
   void onPlayAll();
@@ -221,6 +227,7 @@ private:
   // Sources panel
   QPushButton* btnAddCam_=nullptr;
   QPushButton* btnAddVideo_=nullptr;
+  QPushButton* btnAddImgSeq_=nullptr;
   QPushButton* btnRemoveSource_=nullptr;
   QPushButton* btnPauseResume_=nullptr;
   QPushButton* btnPlayAll_=nullptr;

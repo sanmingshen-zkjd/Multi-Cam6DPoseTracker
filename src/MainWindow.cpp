@@ -11,6 +11,7 @@
 #include <QDateTime>
 #include <QMessageBox>
 #include <QFileInfo>
+#include <QDir>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -19,6 +20,10 @@
 
 static QString nowStr() {
   return QDateTime::currentDateTime().toString("hh:mm:ss");
+}
+
+static QStringList kImageNameFilters() {
+  return {"*.png", "*.jpg", "*.jpeg", "*.bmp", "*.tif", "*.tiff"};
 }
 
 
@@ -234,6 +239,7 @@ void MainWindow::buildUI() {
     QHBoxLayout* playbar = new QHBoxLayout();
     btnAddCam_ = new QPushButton("AddCamera", central);
     btnAddVideo_ = new QPushButton("AddVideo", central);
+    btnAddImgSeq_ = new QPushButton("AddImageSeq", central);
     btnRemoveSource_ = new QPushButton("Remove", central);
     btnPauseResume_ = new QPushButton("Pause/Resume", central);
     btnPlayAll_ = new QPushButton("Play", central);
@@ -257,6 +263,7 @@ void MainWindow::buildUI() {
 
     playbar->addWidget(btnAddCam_);
     playbar->addWidget(btnAddVideo_);
+    playbar->addWidget(btnAddImgSeq_);
     playbar->addWidget(btnRemoveSource_);
     playbar->addWidget(btnPauseResume_);
     playbar->addWidget(btnPlayAll_);
@@ -298,6 +305,7 @@ void MainWindow::buildUI() {
 
     connect(btnAddCam_, &QPushButton::clicked, this, &MainWindow::onAddCamera);
     connect(btnAddVideo_, &QPushButton::clicked, this, &MainWindow::onAddVideo);
+    connect(btnAddImgSeq_, &QPushButton::clicked, this, &MainWindow::onAddImageSequence);
     connect(btnRemoveSource_, &QPushButton::clicked, this, &MainWindow::onRemoveSource);
     connect(btnPauseResume_, &QPushButton::clicked, this, &MainWindow::onPauseResumeSelected);
     connect(btnPlayAll_, &QPushButton::clicked, this, &MainWindow::onPlayAll);
@@ -464,6 +472,10 @@ bool MainWindow::openAllSources() {
   closeAllSources();
   bool okAll = true;
   for (auto& s : sources_) {
+    if (s.is_image_seq) {
+      if (s.seq_files.isEmpty()) okAll = false;
+      continue;
+    }
     if (s.is_cam) s.cap.open(s.cam_id);
     else s.cap.open(s.video_path.toStdString());
     if (!s.cap.isOpened()) okAll = false;
@@ -482,8 +494,10 @@ void MainWindow::refreshSourceList() {
   QMutexLocker locker(&sources_mutex_);
   for (int i=0;i<(int)sources_.size();++i) {
     const auto& s = sources_[i];
-    QString label = s.is_cam ? QString("Camera %1").arg(s.cam_id)
-                             : QFileInfo(s.video_path).fileName();
+    QString label;
+    if (s.is_cam) label = QString("Camera %1").arg(s.cam_id);
+    else if (s.is_image_seq) label = QString("ImgSeq:%1").arg(QFileInfo(s.seq_dir).fileName());
+    else label = QFileInfo(s.video_path).fileName();
     bool en = (i < (int)source_enabled_.size()) ? source_enabled_[i] : true;
     label += en ? "[RUN]" : "[PAUSED]";
     status << label;
@@ -627,8 +641,12 @@ void MainWindow::onAddVideo()
         last_frames_.resize(num_cams_);
  
     cv::Mat firstFrame;
-    s.cap.read(firstFrame);
-        last_frames_[num_cams_ - 1] = firstFrame.clone();
+    if (!sources_.empty() && sources_.back().cap.isOpened()) {
+      sources_.back().cap.set(cv::CAP_PROP_POS_FRAMES, 0);
+      sources_.back().cap.read(firstFrame);
+      sources_.back().cap.set(cv::CAP_PROP_POS_FRAMES, 0);
+    }
+    last_frames_[num_cams_ - 1] = firstFrame.clone();
 
     source_enabled_.assign(std::max(0,num_cams_), true);
     // last_frames_ will be populated by CaptureWorker when frames arrive.
@@ -638,6 +656,57 @@ void MainWindow::onAddVideo()
     if (show_docks_) rebuildSourceDocks();
     rebuildSourceViews();
     logLine(QString("Added video: %1").arg(path));
+    timer_.start(33);
+    if (captureWorker_) QMetaObject::invokeMethod(captureWorker_, "start", Qt::QueuedConnection);
+}
+
+
+void MainWindow::onAddImageSequence()
+{
+    QString last = settings_.value("lastImageSeqDir", "").toString();
+    QString dir = QFileDialog::getExistingDirectory(this, "Add Image Sequence Folder", last);
+    if (dir.isEmpty()) return;
+
+    QDir qdir(dir);
+    QFileInfoList files = qdir.entryInfoList(kImageNameFilters(), QDir::Files, QDir::Name);
+    if (files.isEmpty()) {
+      QMessageBox::warning(this, "Image Sequence", "No image files found in selected folder.");
+      return;
+    }
+
+    InputSource s;
+    s.is_cam = false;
+    s.is_image_seq = true;
+    s.seq_dir = dir;
+    s.video_path = dir;
+    s.seq_idx = 0;
+    for (const auto& fi : files) s.seq_files.push_back(fi.absoluteFilePath());
+
+    cv::Mat firstFrame = cv::imread(s.seq_files.front().toStdString(), cv::IMREAD_COLOR);
+    if (firstFrame.empty()) {
+      QMessageBox::warning(this, "Image Sequence", "Failed to read first image in selected folder.");
+      return;
+    }
+
+    settings_.setValue("lastImageSeqDir", dir);
+
+    timer_.stop();
+    if (captureWorker_) QMetaObject::invokeMethod(captureWorker_, "stop", Qt::BlockingQueuedConnection);
+
+    sources_.push_back(std::move(s));
+    num_cams_ = (int)sources_.size();
+    if ((int)source_enabled_.size() < num_cams_) source_enabled_.resize(num_cams_, true);
+    source_enabled_[num_cams_ - 1] = true;
+    if ((int)last_frames_.size() < num_cams_) last_frames_.resize(num_cams_);
+    last_frames_[num_cams_ - 1] = firstFrame.clone();
+
+    source_enabled_.assign(std::max(0, num_cams_), true);
+    last_frames_.resize(std::max(0, num_cams_));
+    calibrator_.reset(new MultiCamCalibrator(std::max(1, num_cams_), cv::Size(board_w_, board_h_), square_));
+    refreshSourceList();
+    if (show_docks_) rebuildSourceDocks();
+    rebuildSourceViews();
+    logLine(QString("Added image sequence: %1 (%2 frames)").arg(dir).arg(files.size()));
     timer_.start(33);
     if (captureWorker_) QMetaObject::invokeMethod(captureWorker_, "start", Qt::QueuedConnection);
 }
@@ -869,9 +938,16 @@ QJsonObject MainWindow::toProjectJson() const {
     const auto& s = sources_[i];
     QJsonObject si;
     si["enabled"] = (i < (int)source_enabled_.size()) ? source_enabled_[i] : true;
-    si["type"] = s.is_cam ? "cam" : "video";
-    if (s.is_cam) si["cam_id"] = s.cam_id;
-    else si["path"] = s.video_path;
+    if (s.is_cam) {
+      si["type"] = "cam";
+      si["cam_id"] = s.cam_id;
+    } else if (s.is_image_seq) {
+      si["type"] = "imgseq";
+      si["dir"] = s.seq_dir;
+    } else {
+      si["type"] = "video";
+      si["path"] = s.video_path;
+    }
     srcs.append(si);
   }
   o["sources"] = srcs;
@@ -919,8 +995,18 @@ bool MainWindow::fromProjectJson(const QJsonObject& o) {
         s.cap.open(s.cam_id);
       } else if (type == "video") {
         s.is_cam = false;
+        s.is_image_seq = false;
         s.video_path = si["path"].toString();
         s.cap.open(s.video_path.toStdString());
+      } else if (type == "imgseq") {
+        s.is_cam = false;
+        s.is_image_seq = true;
+        s.seq_dir = si["dir"].toString();
+        s.video_path = s.seq_dir;
+        QDir qdir(s.seq_dir);
+        QFileInfoList files = qdir.entryInfoList(kImageNameFilters(), QDir::Files, QDir::Name);
+        for (const auto& fi : files) s.seq_files.push_back(fi.absoluteFilePath());
+        s.seq_idx = 0;
       } else continue;
 
       sources_.push_back(std::move(s));
@@ -1178,7 +1264,13 @@ void MainWindow::onFramesFromWorker(FramePack frames, qint64 capture_ts_ms) {
   {
     QMutexLocker srcLock(&sources_mutex_);
     for (const auto& s : sources_) {
-      if (s.is_cam || !s.cap.isOpened()) continue;
+      if (s.is_cam) continue;
+      if (s.is_image_seq) {
+        framePos = std::max<int64_t>(0, s.seq_idx);
+        if (frameEnd <= 0) frameEnd = (int64_t)s.seq_files.size();
+        break;
+      }
+      if (!s.cap.isOpened()) continue;
       framePos = std::max<int64_t>(0, (int64_t)std::llround(s.cap.get(cv::CAP_PROP_POS_FRAMES)) - 1);
       double fc = s.cap.get(cv::CAP_PROP_FRAME_COUNT);
       if (frameEnd <= 0 && fc > 0) frameEnd = (int64_t)fc;
@@ -1297,6 +1389,12 @@ void MainWindow::updatePlaybackParams() {
     QMutexLocker srcLock(&sources_mutex_);
     for (auto& s : sources_) {
       if (s.is_cam) continue;
+      if (s.is_image_seq) {
+        int64_t fc = (int64_t)s.seq_files.size();
+        if (fc > 0) { minFrames = std::min(minFrames, fc); found = true; }
+        if (fps <= 0.0) fps = 30.0;
+        continue;
+      }
       if (!s.cap.isOpened()) continue;
       double fc = s.cap.get(cv::CAP_PROP_FRAME_COUNT);
       if (fc > 0) { minFrames = std::min(minFrames, (int64_t)fc); found=true; }
@@ -1316,7 +1414,12 @@ void MainWindow::updatePlaybackParams() {
     int64_t maxFrames = 0;
     QMutexLocker srcLock(&sources_mutex_);
     for (const auto& s : sources_) {
-      if (s.is_cam || !s.cap.isOpened()) continue;
+      if (s.is_cam) continue;
+      if (s.is_image_seq) {
+        maxFrames = std::max<int64_t>(maxFrames, (int64_t)s.seq_files.size());
+        continue;
+      }
+      if (!s.cap.isOpened()) continue;
       double fc = s.cap.get(cv::CAP_PROP_FRAME_COUNT);
       if (fc > 0) maxFrames = std::max<int64_t>(maxFrames, (int64_t)fc);
     }
@@ -1350,13 +1453,23 @@ void MainWindow::stepAllVideos(int delta) {
     steppedFrames.resize(sources_.size());
     for (int i=0;i<(int)sources_.size();++i) {
       auto& src = sources_[i];
-      if (src.is_cam || !src.cap.isOpened()) continue;
-      double cur = src.cap.get(cv::CAP_PROP_POS_FRAMES);
-      int64_t target = std::max<int64_t>(0, (int64_t)std::llround(cur) + delta);
-      if (play_end_frame_ > 0) target = std::min<int64_t>(target, play_end_frame_-1);
-      src.cap.set(cv::CAP_PROP_POS_FRAMES, (double)target);
+      if (src.is_cam) continue;
       cv::Mat f;
-      src.cap.read(f);
+      int64_t target = 0;
+      if (src.is_image_seq) {
+        int64_t cur = src.seq_idx;
+        target = std::max<int64_t>(0, cur + delta);
+        if (!src.seq_files.isEmpty()) target = std::min<int64_t>(target, (int64_t)src.seq_files.size()-1);
+        src.seq_idx = (int)target;
+        f = cv::imread(src.seq_files[(int)target].toStdString(), cv::IMREAD_COLOR);
+      } else {
+        if (!src.cap.isOpened()) continue;
+        double cur = src.cap.get(cv::CAP_PROP_POS_FRAMES);
+        target = std::max<int64_t>(0, (int64_t)std::llround(cur) + delta);
+        if (play_end_frame_ > 0) target = std::min<int64_t>(target, play_end_frame_-1);
+        src.cap.set(cv::CAP_PROP_POS_FRAMES, (double)target);
+        src.cap.read(f);
+      }
       if (!f.empty()) {
         steppedFrames[i] = f;
         progressFrame = target;
@@ -1416,7 +1529,12 @@ void MainWindow::onProgressSliderReleased() {
   {
     QMutexLocker srcLock(&sources_mutex_);
     for (auto& src : sources_) {
-      if (src.is_cam || !src.cap.isOpened()) continue;
+      if (src.is_cam) continue;
+      if (src.is_image_seq) {
+        if (!src.seq_files.isEmpty()) src.seq_idx = std::max(0, std::min(target, (int)src.seq_files.size()-1));
+        continue;
+      }
+      if (!src.cap.isOpened()) continue;
       src.cap.set(cv::CAP_PROP_POS_FRAMES, (double)target);
     }
   }
@@ -1442,6 +1560,7 @@ void MainWindow::onPlayAll() {
     // Rewind all videos to frame 0 for perfect sync
     for (auto& s : sources_) {
       if (s.is_cam) continue;
+      if (s.is_image_seq) { s.seq_idx = 0; continue; }
       if (s.cap.isOpened()) {
         s.cap.set(cv::CAP_PROP_POS_FRAMES, 0);
       }

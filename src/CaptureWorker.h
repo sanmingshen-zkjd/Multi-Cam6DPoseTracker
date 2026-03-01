@@ -81,10 +81,6 @@ private slots:
 
       for (int i=0;i<(int)sources_->size();++i) {
         auto& s = (*sources_)[i];
-        if (!s.cap.isOpened()) {
-          frames.push_back(cv::Mat());
-          continue;
-        }
 
         if (!(*enabled_)[i]) {
           frames.push_back(cache_frames_[i]);
@@ -92,9 +88,25 @@ private slots:
         }
 
         cv::Mat f;
-        if (!s.cap.read(f) && !s.is_cam && sync_mode_) {
-          // In sync mode we avoid per-frame random seeks (causes decode stalls/jitter).
-          // If read fails at end, fallback logic below keeps last good frame.
+        if (s.is_image_seq) {
+          if (s.seq_files.isEmpty()) {
+            frames.push_back(cache_frames_[i]);
+            continue;
+          }
+          int idx = sync_mode_ ? (int)cur_frame_ : s.seq_idx;
+          idx = std::max(0, std::min(idx, (int)s.seq_files.size() - 1));
+          f = cv::imread(s.seq_files[idx].toStdString(), cv::IMREAD_COLOR);
+          s.seq_idx = idx;
+          if (!sync_mode_ && s.seq_idx < (int)s.seq_files.size() - 1) s.seq_idx++;
+        } else {
+          if (!s.cap.isOpened()) {
+            frames.push_back(cv::Mat());
+            continue;
+          }
+          if (!s.cap.read(f) && !s.is_cam && sync_mode_) {
+            // In sync mode we avoid per-frame random seeks (causes decode stalls/jitter).
+            // If read fails at end, fallback logic below keeps last good frame.
+          }
         }
 
         if (f.empty()) {
