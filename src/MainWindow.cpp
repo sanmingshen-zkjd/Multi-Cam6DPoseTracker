@@ -227,27 +227,63 @@ void MainWindow::buildUI() {
     QHBoxLayout* root = new QHBoxLayout(central);
 
     QWidget* sideBar = new QWidget(central);
-    sideBar->setFixedWidth(130);
+    sideBar->setObjectName("leftSidebar");
+    sideBar->setFixedWidth(190);
     QVBoxLayout* sv = new QVBoxLayout(sideBar);
-    sv->setContentsMargins(6, 6, 6, 6);
-    sv->setSpacing(8);
-    btnModeCapture_ = new QPushButton("Capture", sideBar);
-    btnModeCalib_ = new QPushButton("Calibration", sideBar);
-    btnModeTrack_ = new QPushButton("Tracking", sideBar);
-    btnModeCapture_->setCheckable(true);
-    btnModeCalib_->setCheckable(true);
-    btnModeTrack_->setCheckable(true);
-    btnModeCapture_->setChecked(true);
-    sv->addWidget(btnModeCapture_);
-    sv->addWidget(btnModeCalib_);
-    sv->addWidget(btnModeTrack_);
+    sv->setContentsMargins(12, 12, 12, 12);
+    sv->setSpacing(10);
+
+    QLabel* appTitle = new QLabel("Multi-Cam6DPoseTracker", sideBar);
+    appTitle->setObjectName("sidebarTitle");
+    appTitle->setWordWrap(true);
+    appTitle->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    sv->addWidget(appTitle);
+
+    QFrame* titleSep = new QFrame(sideBar);
+    titleSep->setFrameShape(QFrame::HLine);
+    titleSep->setFrameShadow(QFrame::Plain);
+    sv->addWidget(titleSep);
+
+    sideModeTabs_ = new QTabBar(sideBar);
+    sideModeTabs_->addTab("Capture");
+    sideModeTabs_->addTab("Calibration");
+    sideModeTabs_->addTab("Tracking");
+    sideModeTabs_->setExpanding(true);
+    sideModeTabs_->setShape(QTabBar::RoundedWest);
+    sideModeTabs_->setDrawBase(false);
+    sideModeTabs_->setCurrentIndex(0);
+    sideModeTabs_->setMovable(false);
+    sideModeTabs_->setUsesScrollButtons(false);
+    sideModeTabs_->setElideMode(Qt::ElideNone);
+    sv->addWidget(sideModeTabs_);
+
     sv->addStretch(1);
+
+    QFrame* bottomSep = new QFrame(sideBar);
+    bottomSep->setFrameShape(QFrame::HLine);
+    bottomSep->setFrameShadow(QFrame::Plain);
+    sv->addWidget(bottomSep);
+
     btnFileMenu_ = new QToolButton(sideBar);
     btnFileMenu_->setText("File");
     btnFileMenu_->setToolButtonStyle(Qt::ToolButtonTextOnly);
     btnFileMenu_->setPopupMode(QToolButton::InstantPopup);
+    btnFileMenu_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    btnFileMenu_->setToolTip("Software info, Save Project, Load Project");
     sv->addWidget(btnFileMenu_);
     root->addWidget(sideBar);
+    sideBar->setStyleSheet(
+      "#leftSidebar{background:#1f232b;border-right:1px solid #3a4250;}"
+      "#sidebarTitle{font-size:16px;font-weight:700;color:#f4f7fb;padding:4px 2px;}"
+      "QTabBar::tab{background:transparent;color:#c8d0da;padding:8px 10px;text-align:left;border-radius:6px;margin:2px 0;}"
+      "QTabBar::tab:selected{background:#3b82f6;color:white;font-weight:600;}"
+      "QTabBar::tab:hover:!selected{background:#2a3140;color:#f0f4f8;}"
+      "QFrame{color:#394150;background:#394150;}");
+
+    QFrame* sideSep = new QFrame(central);
+    sideSep->setFrameShape(QFrame::VLine);
+    sideSep->setFrameShadow(QFrame::Plain);
+    root->addWidget(sideSep);
 
     QWidget* mainPane = new QWidget(central);
     QVBoxLayout* v = new QVBoxLayout(mainPane);
@@ -349,14 +385,18 @@ void MainWindow::buildUI() {
     connect(progressSlider_, &QSlider::sliderReleased, this, &MainWindow::onProgressSliderReleased);
     connect(editCurFrame_, &QLineEdit::returnPressed, this, &MainWindow::onFrameJumpReturnPressed);
     QMenu* fileMenu = new QMenu(btnFileMenu_);
+    QAction* actAbout = fileMenu->addAction("Software Info");
+    fileMenu->addSeparator();
     actSaveProject_ = fileMenu->addAction("Save Project...");
     actLoadProject_ = fileMenu->addAction("Load Project...");
     btnFileMenu_->setMenu(fileMenu);
+    connect(actAbout, &QAction::triggered, this, [this](){
+      QMessageBox::information(this, "Software Info",
+                               "Multi-Cam6DPoseTracker\n\nCapture / Calibration / Tracking workflow.");
+    });
     connect(actSaveProject_, &QAction::triggered, this, &MainWindow::onSaveProject);
     connect(actLoadProject_, &QAction::triggered, this, &MainWindow::onLoadProject);
-    connect(btnModeCapture_, &QPushButton::clicked, this, &MainWindow::onModeCapture);
-    connect(btnModeCalib_, &QPushButton::clicked, this, &MainWindow::onModeCalibration);
-    connect(btnModeTrack_, &QPushButton::clicked, this, &MainWindow::onModeTracking);
+    connect(sideModeTabs_, &QTabBar::currentChanged, this, &MainWindow::onModeTabChanged);
 
     // Right dock: actions + log
     QDockWidget* dock = new QDockWidget("Actions", this);
@@ -968,9 +1008,7 @@ void MainWindow::onRemoveSource() {
 
 void MainWindow::onModeCalibration() {
   mode_ = CALIB;
-  if (btnModeCapture_) btnModeCapture_->setChecked(false);
-  if (btnModeCalib_) btnModeCalib_->setChecked(true);
-  if (btnModeTrack_) btnModeTrack_->setChecked(false);
+  if (sideModeTabs_ && sideModeTabs_->currentIndex()!=1) sideModeTabs_->setCurrentIndex(1);
   if (btnAddCam_) btnAddCam_->setVisible(false);
   if (btnAddVideo_) btnAddVideo_->setVisible(true);
   if (btnAddImgSeq_) btnAddImgSeq_->setVisible(true);
@@ -983,9 +1021,7 @@ void MainWindow::onModeCalibration() {
 
 void MainWindow::onModeTracking() {
   mode_ = TRACK;
-  if (btnModeCapture_) btnModeCapture_->setChecked(false);
-  if (btnModeCalib_) btnModeCalib_->setChecked(false);
-  if (btnModeTrack_) btnModeTrack_->setChecked(true);
+  if (sideModeTabs_ && sideModeTabs_->currentIndex()!=2) sideModeTabs_->setCurrentIndex(2);
   if (btnAddCam_) btnAddCam_->setVisible(false);
   if (btnAddVideo_) btnAddVideo_->setVisible(true);
   if (btnAddImgSeq_) btnAddImgSeq_->setVisible(true);
@@ -998,9 +1034,7 @@ void MainWindow::onModeTracking() {
 
 void MainWindow::onModeCapture() {
   mode_ = CAPTURE;
-  if (btnModeCapture_) btnModeCapture_->setChecked(true);
-  if (btnModeCalib_) btnModeCalib_->setChecked(false);
-  if (btnModeTrack_) btnModeTrack_->setChecked(false);
+  if (sideModeTabs_ && sideModeTabs_->currentIndex()!=0) sideModeTabs_->setCurrentIndex(0);
   if (btnAddCam_) btnAddCam_->setVisible(true);
   if (btnAddVideo_) btnAddVideo_->setVisible(false);
   if (btnAddImgSeq_) btnAddImgSeq_->setVisible(false);
@@ -1036,9 +1070,31 @@ void MainWindow::onCaptureNow() {
 }
 
 void MainWindow::onModeTabChanged(int idx) {
-  if (idx == 0) onModeCapture();
-  else if (idx == 1) onModeCalibration();
-  else onModeTracking();
+  if (modeTabs_ && modeTabs_->currentIndex() != idx) modeTabs_->setCurrentIndex(idx);
+  if (idx == 0) {
+    mode_ = CAPTURE;
+    if (btnAddCam_) btnAddCam_->setVisible(true);
+    if (btnAddVideo_) btnAddVideo_->setVisible(false);
+    if (btnAddImgSeq_) btnAddImgSeq_->setVisible(false);
+    if (actionTabs_) actionTabs_->setCurrentIndex(0);
+    logLine("Switched to Capture mode.");
+  } else if (idx == 1) {
+    mode_ = CALIB;
+    if (btnAddCam_) btnAddCam_->setVisible(false);
+    if (btnAddVideo_) btnAddVideo_->setVisible(true);
+    if (btnAddImgSeq_) btnAddImgSeq_->setVisible(true);
+    if (actionTabs_) actionTabs_->setCurrentIndex(1);
+    logLine("Switched to Calibration mode.");
+  } else {
+    mode_ = TRACK;
+    if (btnAddCam_) btnAddCam_->setVisible(false);
+    if (btnAddVideo_) btnAddVideo_->setVisible(true);
+    if (btnAddImgSeq_) btnAddImgSeq_->setVisible(true);
+    if (actionTabs_) actionTabs_->setCurrentIndex(2);
+    logLine("Switched to Tracking mode.");
+  }
+  rebuildSourceViews();
+  updateSourceViews(last_frames_);
 }
 
 bool MainWindow::readFrames(std::vector<cv::Mat>& frames) {

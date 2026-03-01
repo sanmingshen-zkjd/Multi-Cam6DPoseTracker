@@ -12,6 +12,7 @@
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QTabWidget>
+#include <QTabBar>
 #include <QListWidget>
 #include <QCheckBox>
 #include <QComboBox>
@@ -267,9 +268,7 @@ private:
   QLabel* lblResolution_=nullptr;
   //QCheckBox* chkSyncPlay_=nullptr;
   //QLabel* lblPlayState_=nullptr;
-  QPushButton* btnModeCalib_=nullptr;
-  QPushButton* btnModeTrack_=nullptr;
-  QPushButton* btnModeCapture_=nullptr;
+  QTabBar* sideModeTabs_=nullptr;
   QToolButton* btnFileMenu_=nullptr;
   QTabWidget* actionTabs_=nullptr;
 
