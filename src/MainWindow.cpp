@@ -266,8 +266,11 @@ void MainWindow::buildUI() {
     sv->addWidget(bottomSep);
 
     btnFileMenu_ = new QToolButton(sideBar);
+    btnFileMenu_->setObjectName("fileMenuBtn");
     btnFileMenu_->setText("File");
-    btnFileMenu_->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    btnFileMenu_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    btnFileMenu_->setIcon(style()->standardIcon(QStyle::SP_ArrowRight));
+    btnFileMenu_->setLayoutDirection(Qt::RightToLeft);
     btnFileMenu_->setPopupMode(QToolButton::InstantPopup);
     btnFileMenu_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     btnFileMenu_->setToolTip("Software info, Save Project, Load Project");
@@ -2012,6 +2015,7 @@ void MainWindow::updateProgressUI(int64_t frame, int64_t endFrame) {
 
 
 void MainWindow::stepAllVideos(int delta) {
+  updatePlaybackParams();
   stopCaptureBlocking();
   playback_running_ = false;
   bool stepped = false;
@@ -2034,8 +2038,10 @@ void MainWindow::stepAllVideos(int delta) {
         f = cv::imread(src.seq_files[(int)target].toStdString(), cv::IMREAD_COLOR);
       } else {
         if (!src.cap.isOpened()) continue;
-        double cur = src.cap.get(cv::CAP_PROP_POS_FRAMES)-1;
-        target = std::max<int64_t>(0, (int64_t)std::llround(cur) + delta);
+        double curPos = src.cap.get(cv::CAP_PROP_POS_FRAMES);
+        int64_t curIdx = std::max<int64_t>(0, (int64_t)std::llround(curPos));
+        if (curIdx > 0) curIdx -= 1;
+        target = std::max<int64_t>(0, curIdx + delta);
         if (play_end_frame_ > 0) target = std::min<int64_t>(target, play_end_frame_-1);
         src.cap.set(cv::CAP_PROP_POS_FRAMES, (double)target);
         src.cap.read(f);
@@ -2144,8 +2150,8 @@ void MainWindow::onPlayAll() {
 
   // Start playback when user presses Play.
   int vidN = videoSourceCount();
-  if (vidN < 2) {
-    QMessageBox::information(this, "Play", "Need at least 2 video sources for synchronized playback.");
+  if (vidN < 1) {
+    QMessageBox::information(this, "Play", "Need at least 1 video/image source in current tab.");
     return;
   }
 
