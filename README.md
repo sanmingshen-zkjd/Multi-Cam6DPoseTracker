@@ -98,12 +98,3 @@ Status bar: current mode + capture count + inliers.
 ## Notes
 - For best extrinsics: capture chessboard visible on cam0 and other cameras in the SAME frame (board static is OK).
 - Pose estimation uses previous estimate as initialization for smoother tracking.
-
-
-## New architecture option: Electron + Vue frontend + C++ backend
-
-A migration scaffold has been added:
-- Backend: `backend/` (C++ HTTP service)
-- Frontend: `frontend/` (Electron + Vue app shell)
-
-See `MIGRATION_ELECTRON_VUE_CPP.md` for build/run and migration phases.
