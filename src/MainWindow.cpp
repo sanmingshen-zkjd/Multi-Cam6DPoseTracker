@@ -2020,6 +2020,8 @@ void MainWindow::stepAllVideos(int delta) {
   playback_running_ = false;
   bool stepped = false;
   int64_t progressFrame = play_frame_;
+  int64_t desiredFrame = std::max<int64_t>(0, play_frame_ + delta);
+  if (play_end_frame_ > 0) desiredFrame = std::min<int64_t>(desiredFrame, play_end_frame_-1);
   std::vector<cv::Mat> steppedFrames;
 
   {
@@ -2029,20 +2031,18 @@ void MainWindow::stepAllVideos(int delta) {
       auto& src = sources_[i];
       if (src.is_cam || src.mode_owner!=(int)mode_) continue;
       cv::Mat f;
-      int64_t target = 0;
+      int64_t target = desiredFrame;
       if (src.is_image_seq) {
-        int64_t cur = src.seq_idx;
-        target = std::max<int64_t>(0, cur + delta);
-        if (!src.seq_files.isEmpty()) target = std::min<int64_t>(target, (int64_t)src.seq_files.size()-1);
+        if (src.seq_files.isEmpty()) continue;
+        target = std::max<int64_t>(0, std::min<int64_t>(target, (int64_t)src.seq_files.size()-1));
         src.seq_idx = (int)target;
         f = cv::imread(src.seq_files[(int)target].toStdString(), cv::IMREAD_COLOR);
       } else {
         if (!src.cap.isOpened()) continue;
-        double curPos = src.cap.get(cv::CAP_PROP_POS_FRAMES);
-        int64_t curIdx = std::max<int64_t>(0, (int64_t)std::llround(curPos));
-        if (curIdx > 0) curIdx -= 1;
-        target = std::max<int64_t>(0, curIdx + delta);
-        if (play_end_frame_ > 0) target = std::min<int64_t>(target, play_end_frame_-1);
+        if (play_end_frame_ <= 0) {
+          double cnt = src.cap.get(cv::CAP_PROP_FRAME_COUNT);
+          if (cnt > 0) target = std::min<int64_t>(target, std::max<int64_t>(0, (int64_t)std::llround(cnt)-1));
+        }
         src.cap.set(cv::CAP_PROP_POS_FRAMES, (double)target);
         src.cap.read(f);
       }
