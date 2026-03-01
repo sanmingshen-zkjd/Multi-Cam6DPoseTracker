@@ -63,6 +63,9 @@ public:
                  std::vector<CameraModel>& out_cams,
                  double& out_mean_rms);
 
+  bool computeFrameReprojErrors(const std::vector<CameraModel>& cams,
+                                std::vector<double>& frame_rmse) const;
+
 private:
   int num_cams_;
   cv::Size board_size_;

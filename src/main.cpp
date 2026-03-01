@@ -1,6 +1,12 @@
 #include <QApplication>
+#include <QGuiApplication>
+#include <QScreen>
+#include <QFont>
+#include <QtGlobal>
 #include <QString>
 #include <iostream>
+#include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include <opencv2/opencv.hpp>
@@ -33,7 +39,55 @@ static bool openSources(std::vector<InputSource>& sources) {
 }
 
 int main(int argc, char** argv) {
-  QApplication app(argc, argv);  std::vector<InputSource> sources;
+#if QT_VERSION >= QT_VERSION_CHECK(5, 6, 0)
+  QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+  QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+#endif
+#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+  QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+      Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+#endif
+
+  QApplication app(argc, argv);
+
+
+  // Increase global UI font and control metrics for better readability/proportion.
+  qreal dpiScale = 1.0;
+  if (QScreen* screen = QGuiApplication::primaryScreen()) {
+    dpiScale = std::max<qreal>(1.0, screen->logicalDotsPerInch() / 96.0);
+  }
+
+  QFont font = app.font();
+  if (font.pointSizeF() > 0.0) {
+    const qreal boosted = font.pointSizeF() * std::max<qreal>(1.20, dpiScale * 1.20);
+    const qreal targetPt = std::max<qreal>(13.5, boosted);
+    font.setPointSizeF(targetPt);
+    app.setFont(font);
+  } else if (font.pixelSize() > 0) {
+    const int boosted = (int)std::lround(font.pixelSize() * std::max<qreal>(1.20, dpiScale * 1.20));
+    const int targetPx = std::max(18, boosted);
+    font.setPixelSize(targetPx);
+    app.setFont(font);
+  }
+
+  // Keep button/input text proportionate to larger layouts.
+  const int minControlH = std::max(34, (int)std::lround(34.0 * dpiScale));
+  app.setStyleSheet(QString(
+      "QMainWindow,QWidget{background:#20242b;color:#e8edf2;}"
+      "QLabel{color:#e8edf2;}"
+      "QPushButton,QToolButton,QComboBox,QSpinBox,QDoubleSpinBox{"
+      "min-height:%1px;padding:4px 8px;background:#2d333b;color:#f0f4f8;border:1px solid #4a5563;border-radius:4px;}"
+      "QPushButton:hover,QToolButton:hover{background:#384150;}"
+      "QPushButton:pressed,QToolButton:pressed{background:#222831;}"
+      "QTabBar::tab{padding:6px 12px;background:#2d333b;color:#e8edf2;}"
+      "QTabBar::tab:selected{background:#4b6ea8;color:#ffffff;font-weight:600;}"
+      "QTabBar::tab:!selected{background:#2d333b;color:#c6ced8;}"
+      "QSlider::groove:horizontal{height:8px;background:#3a4250;border-radius:4px;}"
+      "QSlider::handle:horizontal{width:16px;margin:-5px 0;background:#7aa2f7;border-radius:8px;}"
+      "QToolTip{background:#f4f6f8;color:#111;border:1px solid #6b7280;padding:4px;}")
+      .arg(minControlH));
+
+  std::vector<InputSource> sources;
   int board_w=-1, board_h=-1;
   double square=0.0;
 

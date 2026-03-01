@@ -2,6 +2,7 @@
 #include <QMainWindow>
 #include <QThread>
 #include <QMenuBar>
+#include <QMenu>
 #include <QAction>
 #include <QDockWidget>
 #include <QTimer>
@@ -11,6 +12,7 @@
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QTabWidget>
+#include <QTabBar>
 #include <QListWidget>
 #include <QCheckBox>
 #include <QComboBox>
@@ -22,6 +24,19 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QFile>
+#include <QGraphicsView>
+#include <QGraphicsScene>
+#include <QGraphicsPixmapItem>
+#include <QGraphicsLineItem>
+#include <QMouseEvent>
+#include <QWheelEvent>
+#include <QResizeEvent>
+#include <QSlider>
+#include <QProgressBar>
+#include <QTableWidget>
+#include <QToolButton>
+#include <QLineEdit>
+#include <QStringList>
 
 #include <opencv2/opencv.hpp>
 #include "Core.h"
@@ -31,13 +46,51 @@
 
 struct InputSource {
   bool is_cam=false;
+  bool is_image_seq=false;
   int cam_id=-1;
   QString video_path;
+  QString seq_dir;
+  QStringList seq_files;
+  int seq_idx=0;
+  int mode_owner=0; // 0=Calibration tab, 1=Tracking tab
   cv::VideoCapture cap;
 };
 
 class CaptureWorker;
 class SolveWorker;
+
+class ImageViewer : public QGraphicsView {
+  Q_OBJECT
+public:
+  enum ToolMode { PanTool=0, PointTool=1, LineTool=2 };
+  explicit ImageViewer(QWidget* parent=nullptr);
+  void setImage(const QImage& img);
+  void setToolMode(ToolMode mode);
+  void zoomIn();
+  void zoomOut();
+  void resetView();
+  void clearAnnotations();
+
+signals:
+  void linePreviewText(const QString& text);
+
+protected:
+  void wheelEvent(QWheelEvent* e) override;
+  void mousePressEvent(QMouseEvent* e) override;
+  void mouseMoveEvent(QMouseEvent* e) override;
+  void resizeEvent(QResizeEvent* e) override;
+
+private:
+  void applyZoom(double factor);
+
+  QGraphicsScene scene_;
+  QGraphicsPixmapItem* pixmapItem_ = nullptr;
+  ToolMode toolMode_ = PanTool;
+  double zoomFactor_ = 1.0;
+  bool lineDrawing_ = false;
+  QPointF lineStart_;
+  QGraphicsLineItem* previewLine_ = nullptr;
+};
 
 class MainWindow : public QMainWindow {
   Q_OBJECT
@@ -53,15 +106,30 @@ private slots:
   // Sources actions
   void onAddCamera();
   void onAddVideo();
+  void onAddImageSequence();
+  void onCaptureNow();
   void onRemoveSource();
   void onPauseResumeSelected();
   void onPlayAll();
   void onStopAll();
+  void onStepPrevFrame();
+  void onStepNextFrame();
+  void onToolPan();
+  void onToolPoint();
+  void onToolLine();
+  void onZoomIn();
+  void onZoomOut();
+  void onResetView();
+  void onClearAnnotations();
+  void onProgressSliderReleased();
+  void onFrameJumpReturnPressed();
 
   // Calibration actions
   void onGrabFrame();
   void onResetFrames();
-  void onCalibrateAndSave();
+  void onComputeCalibration();
+  void onRecomputeCalibrationSelected();
+  void onSaveCalibrationYaml();
 
   // Tracking actions
   void onLoadTagMap();
@@ -81,6 +149,8 @@ private slots:
   // UI mode
   void onModeCalibration();
   void onModeTracking();
+  void onModeCapture();
+  void onModeTabChanged(int idx);
 
 private:
   void buildUI();
@@ -91,8 +161,13 @@ private:
   void refreshSourceList();
   void rebuildSourceDocks();
   void updateSourceDocks(const std::vector<cv::Mat>& frames);
+  void rebuildSourceViews();
+  void updateSourceViews(const std::vector<cv::Mat>& frames);
+  std::vector<int> activeSourceIndices() const;
   void stopCaptureBlocking();
   void updatePlaybackParams();
+  void stepAllVideos(int delta);
+  void updateProgressUI(int64_t frame, int64_t endFrame);
   int videoSourceCount() const;
   void setSourceEnabled(int idx, bool enabled);
   bool readFrames(std::vector<cv::Mat>& frames);
@@ -107,6 +182,7 @@ private:
   void overlayTracking(std::vector<cv::Mat>& vis, const std::vector<cv::Mat>& frames);
 
   void updateStatus();
+  bool runCalibrationOnPairs(const std::vector<int>& pairIndices, bool updateTable);
 
 private:
   // Inputs
@@ -143,10 +219,14 @@ private:
   qint64 last_tick_ms_=0;
 
   // Mode
-  enum Mode { CALIB=0, TRACK=1 } mode_=CALIB;
+  enum Mode { CAPTURE=0, CALIB=1, TRACK=2 } mode_=CAPTURE;
 
   // UI widgets
-  QLabel* viewLabel_=nullptr;
+  QTabWidget* modeTabs_=nullptr;
+  QWidget* viewsHost_=nullptr;
+  QGridLayout* viewsGrid_=nullptr;
+  std::vector<ImageViewer*> sourceViews_;
+  std::vector<int> active_view_source_indices_;
   QTextEdit* log_=nullptr;
 
   // Per-source dock views
@@ -164,30 +244,47 @@ private:
 
 
   // Sources panel
-  QListWidget* sourceList_=nullptr;
-  QPushButton* btnAddCam_=nullptr;
-  QPushButton* btnAddVideo_=nullptr;
-  QPushButton* btnRemoveSource_=nullptr;
-  QPushButton* btnPauseResume_=nullptr;
-  QPushButton* btnPlayAll_=nullptr;
-  QPushButton* btnStopAll_=nullptr;
+  QToolButton* btnAddCam_=nullptr;
+  QToolButton* btnAddVideo_=nullptr;
+  QToolButton* btnAddImgSeq_=nullptr;
+  QPushButton* btnCaptureNow_=nullptr;
+  QToolButton* btnRemoveSource_=nullptr;
+  QToolButton* btnPlayAll_=nullptr;
+  QToolButton* btnStopAll_=nullptr;
+  QToolButton* btnStepPrev_=nullptr;
+  QToolButton* btnStepNext_=nullptr;
+
+  QToolButton* btnToolPan_=nullptr;
+  QToolButton* btnToolPoint_=nullptr;
+  QToolButton* btnToolLine_=nullptr;
+  QToolButton* btnZoomIn_=nullptr;
+  QToolButton* btnZoomOut_=nullptr;
+  QToolButton* btnResetView_=nullptr;
+  QToolButton* btnClearAnno_=nullptr;
+  QLabel* lblLineState_=nullptr;
+  QSlider* progressSlider_=nullptr;
+  QLineEdit* editCurFrame_=nullptr;
+  QLabel* lblTotalFrame_=nullptr;
+  QLabel* lblResolution_=nullptr;
   //QCheckBox* chkSyncPlay_=nullptr;
   //QLabel* lblPlayState_=nullptr;
-  QPushButton* btnSaveProject_=nullptr;
-  QPushButton* btnLoadProject_=nullptr;
-  QLabel* lblSources_=nullptr;
-
-
-  QPushButton* btnModeCalib_=nullptr;
-  QPushButton* btnModeTrack_=nullptr;
+  QTabBar* sideModeTabs_=nullptr;
+  QToolButton* btnFileMenu_=nullptr;
+  QTabWidget* actionTabs_=nullptr;
 
   // Calibration tab
   QSpinBox* spBoardW_=nullptr;
   QSpinBox* spBoardH_=nullptr;
   QDoubleSpinBox* spSquare_=nullptr;
+  QComboBox* cbCalibMethod_=nullptr;
   QPushButton* btnGrab_=nullptr;
   QPushButton* btnReset_=nullptr;
-  QPushButton* btnCalibrate_=nullptr;
+  QPushButton* btnComputeCalib_=nullptr;
+  QPushButton* btnRecomputeCalib_=nullptr;
+  QPushButton* btnSaveCalib_=nullptr;
+  QProgressBar* calibProgressBar_=nullptr;
+  QLabel* lblCalibProgress_=nullptr;
+  QTableWidget* calibErrorTable_=nullptr;
   QLabel* lblCaptured_=nullptr;
 
   // Tracking tab
@@ -223,6 +320,15 @@ private:
   double play_fps_=30.0;
   int ui_frame_skip_=0;
   int ui_overlay_div_=4; // run heavy overlay every N UI ticks
+
+  struct CalibrationPair {
+    int frame_id = -1;
+    cv::Mat left;
+    cv::Mat right;
+  };
+  std::vector<CalibrationPair> calib_pairs_;
+  std::vector<double> calib_pair_rmse_;
+  bool has_computed_calib_ = false;
 
   // Timer (UI refresh)
   QTimer timer_;
