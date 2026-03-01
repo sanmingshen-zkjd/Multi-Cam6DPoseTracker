@@ -605,18 +605,13 @@ void MainWindow::rebuildSourceViews() {
     pv->setContentsMargins(4,4,4,4);
     pv->setSpacing(4);
 
-    QWidget* canvas = new QWidget(panel);
-    QGridLayout* overlay = new QGridLayout(canvas);
-    overlay->setContentsMargins(0,0,0,0);
-    overlay->setSpacing(0);
-
-    QToolButton* panBtn = new QToolButton(canvas);
-    QToolButton* pointBtn = new QToolButton(canvas);
-    QToolButton* lineBtn = new QToolButton(canvas);
-    QToolButton* zoomInBtn = new QToolButton(canvas);
-    QToolButton* zoomOutBtn = new QToolButton(canvas);
-    QToolButton* resetBtn = new QToolButton(canvas);
-    QToolButton* clearBtn = new QToolButton(canvas);
+    QToolButton* panBtn = new QToolButton(panel);
+    QToolButton* pointBtn = new QToolButton(panel);
+    QToolButton* lineBtn = new QToolButton(panel);
+    QToolButton* zoomInBtn = new QToolButton(panel);
+    QToolButton* zoomOutBtn = new QToolButton(panel);
+    QToolButton* resetBtn = new QToolButton(panel);
+    QToolButton* clearBtn = new QToolButton(panel);
 
     panBtn->setIcon(themedIcon("transform-move", QStyle::SP_ArrowUp));
     pointBtn->setIcon(themedIcon("draw-freehand", QStyle::SP_DialogYesButton));
@@ -639,17 +634,17 @@ void MainWindow::rebuildSourceViews() {
     resetBtn->setToolTip("Reset view");
     clearBtn->setToolTip("Clear drawings");
 
-    QWidget* floatingBar = new QWidget(canvas);
-    floatingBar->setStyleSheet("background:rgba(28,32,38,185); border:1px solid #4d5666; border-radius:4px;");
-    QHBoxLayout* tb = new QHBoxLayout(floatingBar);
-    tb->setContentsMargins(4,2,4,2);
+    QWidget* containerTopBar = new QWidget(panel);
+    containerTopBar->setStyleSheet("background:#232933; border:1px solid #4d5666; border-radius:4px;");
+    QHBoxLayout* tb = new QHBoxLayout(containerTopBar);
+    tb->setContentsMargins(6,3,6,3);
     tb->setSpacing(2);
     for (QToolButton* b : {panBtn, pointBtn, lineBtn, zoomInBtn, zoomOutBtn, resetBtn, clearBtn}) {
       b->setAutoRaise(true);
       tb->addWidget(b);
     }
 
-    ImageViewer* v = new ImageViewer(canvas);
+    ImageViewer* v = new ImageViewer(panel);
     v->setMinimumSize(480, 270);
     v->setToolMode(ImageViewer::PanTool);
     connect(panBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
@@ -668,9 +663,8 @@ void MainWindow::rebuildSourceViews() {
     connect(zoomOutBtn, &QToolButton::clicked, this, [v]() { v->zoomOut(); });
     connect(resetBtn, &QToolButton::clicked, this, [v]() { v->resetView(); });
     connect(clearBtn, &QToolButton::clicked, this, [v]() { v->clearAnnotations(); });
-    overlay->addWidget(v, 0, 0);
-    overlay->addWidget(floatingBar, 0, 0, Qt::AlignTop | Qt::AlignLeft);
-    pv->addWidget(canvas, 1);
+    pv->addWidget(containerTopBar);
+    pv->addWidget(v, 1);
 
     sourceViews_.push_back(v);
     int r = i / cols;
