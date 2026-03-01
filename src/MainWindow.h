@@ -31,6 +31,7 @@
 #include <QSlider>
 #include <QProgressBar>
 #include <QTableWidget>
+#include <QToolButton>
 #include <QStringList>
 
 #include <opencv2/opencv.hpp>
@@ -239,19 +240,19 @@ private:
   QPushButton* btnAddVideo_=nullptr;
   QPushButton* btnAddImgSeq_=nullptr;
   QPushButton* btnRemoveSource_=nullptr;
-  QPushButton* btnPauseResume_=nullptr;
-  QPushButton* btnPlayAll_=nullptr;
-  QPushButton* btnStopAll_=nullptr;
-  QPushButton* btnStepPrev_=nullptr;
-  QPushButton* btnStepNext_=nullptr;
+  QToolButton* btnPauseResume_=nullptr;
+  QToolButton* btnPlayAll_=nullptr;
+  QToolButton* btnStopAll_=nullptr;
+  QToolButton* btnStepPrev_=nullptr;
+  QToolButton* btnStepNext_=nullptr;
 
-  QPushButton* btnToolPan_=nullptr;
-  QPushButton* btnToolPoint_=nullptr;
-  QPushButton* btnToolLine_=nullptr;
-  QPushButton* btnZoomIn_=nullptr;
-  QPushButton* btnZoomOut_=nullptr;
-  QPushButton* btnResetView_=nullptr;
-  QPushButton* btnClearAnno_=nullptr;
+  QToolButton* btnToolPan_=nullptr;
+  QToolButton* btnToolPoint_=nullptr;
+  QToolButton* btnToolLine_=nullptr;
+  QToolButton* btnZoomIn_=nullptr;
+  QToolButton* btnZoomOut_=nullptr;
+  QToolButton* btnResetView_=nullptr;
+  QToolButton* btnClearAnno_=nullptr;
   QLabel* lblLineState_=nullptr;
   QSlider* progressSlider_=nullptr;
   QLabel* lblProgress_=nullptr;
@@ -268,6 +269,7 @@ private:
   QSpinBox* spBoardW_=nullptr;
   QSpinBox* spBoardH_=nullptr;
   QDoubleSpinBox* spSquare_=nullptr;
+  QComboBox* cbCalibMethod_=nullptr;
   QPushButton* btnGrab_=nullptr;
   QPushButton* btnReset_=nullptr;
   QPushButton* btnComputeCalib_=nullptr;

@@ -20,6 +20,7 @@
 #include <QApplication>
 #include <QHeaderView>
 #include <QTabBar>
+#include <QStyle>
 
 static QString nowStr() {
   return QDateTime::currentDateTime().toString("hh:mm:ss");
@@ -236,19 +237,37 @@ void MainWindow::buildUI() {
     btnAddVideo_ = new QPushButton("AddVideo", central);
     btnAddImgSeq_ = new QPushButton("AddImageSeq", central);
     btnRemoveSource_ = new QPushButton("Remove", central);
-    btnPauseResume_ = new QPushButton("Pause/Resume", central);
-    btnPlayAll_ = new QPushButton("Play", central);
-    btnStopAll_ = new QPushButton("Stop", central);
-    btnStepPrev_ = new QPushButton("Prev Frame", central);
-    btnStepNext_ = new QPushButton("Next Frame", central);
+    btnPauseResume_ = new QToolButton(central);
+    btnPlayAll_ = new QToolButton(central);
+    btnStopAll_ = new QToolButton(central);
+    btnStepPrev_ = new QToolButton(central);
+    btnStepNext_ = new QToolButton(central);
 
-    btnToolPan_ = new QPushButton("Pan", central);
-    btnToolPoint_ = new QPushButton("Draw Point", central);
-    btnToolLine_ = new QPushButton("Draw Line", central);
-    btnZoomIn_ = new QPushButton("Zoom +", central);
-    btnZoomOut_ = new QPushButton("Zoom -", central);
-    btnResetView_ = new QPushButton("Reset View", central);
-    btnClearAnno_ = new QPushButton("Clear Drawings", central);
+    btnPlayAll_->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
+    btnPauseResume_->setIcon(style()->standardIcon(QStyle::SP_MediaPause));
+    btnStopAll_->setIcon(style()->standardIcon(QStyle::SP_MediaStop));
+    btnStepPrev_->setIcon(style()->standardIcon(QStyle::SP_MediaSkipBackward));
+    btnStepNext_->setIcon(style()->standardIcon(QStyle::SP_MediaSkipForward));
+    btnPlayAll_->setToolTip("Play");
+    btnPauseResume_->setToolTip("Pause/Resume");
+    btnStopAll_->setToolTip("Stop");
+    btnStepPrev_->setToolTip("Prev Frame");
+    btnStepNext_->setToolTip("Next Frame");
+
+    btnToolPan_ = new QToolButton(central);
+    btnToolPoint_ = new QToolButton(central);
+    btnToolLine_ = new QToolButton(central);
+    btnZoomIn_ = new QToolButton(central);
+    btnZoomOut_ = new QToolButton(central);
+    btnResetView_ = new QToolButton(central);
+    btnClearAnno_ = new QToolButton(central);
+    btnToolPan_->setText("Pan");
+    btnToolPoint_->setText("Point");
+    btnToolLine_->setText("Line");
+    btnZoomIn_->setText("Zoom+");
+    btnZoomOut_->setText("Zoom-");
+    btnResetView_->setText("Reset");
+    btnClearAnno_->setText("Clear");
     lblLineState_ = new QLabel("Line: idle", central);
 
     btnToolPan_->setCheckable(true);
@@ -266,15 +285,18 @@ void MainWindow::buildUI() {
     playbar->addWidget(btnStepPrev_);
     playbar->addWidget(btnStepNext_);
     playbar->addSpacing(16);
-    playbar->addWidget(btnToolPan_);
-    playbar->addWidget(btnToolPoint_);
-    playbar->addWidget(btnToolLine_);
-    playbar->addWidget(btnZoomIn_);
-    playbar->addWidget(btnZoomOut_);
-    playbar->addWidget(btnResetView_);
-    playbar->addWidget(btnClearAnno_);
-    playbar->addWidget(lblLineState_, 1);
     v->addLayout(playbar);
+
+    QHBoxLayout* imageToolRow = new QHBoxLayout();
+    imageToolRow->addWidget(btnToolPan_);
+    imageToolRow->addWidget(btnToolPoint_);
+    imageToolRow->addWidget(btnToolLine_);
+    imageToolRow->addWidget(btnZoomIn_);
+    imageToolRow->addWidget(btnZoomOut_);
+    imageToolRow->addWidget(btnResetView_);
+    imageToolRow->addWidget(btnClearAnno_);
+    imageToolRow->addWidget(lblLineState_, 1);
+    v->addLayout(imageToolRow);
 
     QHBoxLayout* progressRow = new QHBoxLayout();
     progressRow->addWidget(new QLabel("Progress", central));
@@ -302,18 +324,18 @@ void MainWindow::buildUI() {
     connect(btnAddVideo_, &QPushButton::clicked, this, &MainWindow::onAddVideo);
     connect(btnAddImgSeq_, &QPushButton::clicked, this, &MainWindow::onAddImageSequence);
     connect(btnRemoveSource_, &QPushButton::clicked, this, &MainWindow::onRemoveSource);
-    connect(btnPauseResume_, &QPushButton::clicked, this, &MainWindow::onPauseResumeSelected);
-    connect(btnPlayAll_, &QPushButton::clicked, this, &MainWindow::onPlayAll);
-    connect(btnStopAll_, &QPushButton::clicked, this, &MainWindow::onStopAll);
-    connect(btnStepPrev_, &QPushButton::clicked, this, &MainWindow::onStepPrevFrame);
-    connect(btnStepNext_, &QPushButton::clicked, this, &MainWindow::onStepNextFrame);
-    connect(btnToolPan_, &QPushButton::clicked, this, &MainWindow::onToolPan);
-    connect(btnToolPoint_, &QPushButton::clicked, this, &MainWindow::onToolPoint);
-    connect(btnToolLine_, &QPushButton::clicked, this, &MainWindow::onToolLine);
-    connect(btnZoomIn_, &QPushButton::clicked, this, &MainWindow::onZoomIn);
-    connect(btnZoomOut_, &QPushButton::clicked, this, &MainWindow::onZoomOut);
-    connect(btnResetView_, &QPushButton::clicked, this, &MainWindow::onResetView);
-    connect(btnClearAnno_, &QPushButton::clicked, this, &MainWindow::onClearAnnotations);
+    connect(btnPauseResume_, &QToolButton::clicked, this, &MainWindow::onPauseResumeSelected);
+    connect(btnPlayAll_, &QToolButton::clicked, this, &MainWindow::onPlayAll);
+    connect(btnStopAll_, &QToolButton::clicked, this, &MainWindow::onStopAll);
+    connect(btnStepPrev_, &QToolButton::clicked, this, &MainWindow::onStepPrevFrame);
+    connect(btnStepNext_, &QToolButton::clicked, this, &MainWindow::onStepNextFrame);
+    connect(btnToolPan_, &QToolButton::clicked, this, &MainWindow::onToolPan);
+    connect(btnToolPoint_, &QToolButton::clicked, this, &MainWindow::onToolPoint);
+    connect(btnToolLine_, &QToolButton::clicked, this, &MainWindow::onToolLine);
+    connect(btnZoomIn_, &QToolButton::clicked, this, &MainWindow::onZoomIn);
+    connect(btnZoomOut_, &QToolButton::clicked, this, &MainWindow::onZoomOut);
+    connect(btnResetView_, &QToolButton::clicked, this, &MainWindow::onResetView);
+    connect(btnClearAnno_, &QToolButton::clicked, this, &MainWindow::onClearAnnotations);
     connect(progressSlider_, &QSlider::sliderReleased, this, &MainWindow::onProgressSliderReleased);
     connect(btnSaveProject_, &QPushButton::clicked, this, &MainWindow::onSaveProject);
     connect(btnLoadProject_, &QPushButton::clicked, this, &MainWindow::onLoadProject);
@@ -330,6 +352,17 @@ void MainWindow::buildUI() {
     // Calibration tab
     QWidget* tabCal = new QWidget(actionTabs_);
     QVBoxLayout* calv = new QVBoxLayout(tabCal);
+
+    QGroupBox* gbMethod = new QGroupBox("Calibration Method", tabCal);
+    QVBoxLayout* ml = new QVBoxLayout(gbMethod);
+    cbCalibMethod_ = new QComboBox(gbMethod);
+    cbCalibMethod_->addItem("Chessboard Calibration (available)");
+    cbCalibMethod_->addItem("Total Station Calibration (reserved)");
+    cbCalibMethod_->addItem("UAV Calibration (reserved)");
+    cbCalibMethod_->setCurrentIndex(0);
+    ml->addWidget(cbCalibMethod_);
+    ml->addWidget(new QLabel("Reserved methods are placeholders for future implementation.", gbMethod));
+    gbMethod->setLayout(ml);
 
     QGroupBox* gbBoard = new QGroupBox("Chessboard Parameters", tabCal);
     QGridLayout* gl = new QGridLayout(gbBoard);
@@ -373,6 +406,7 @@ void MainWindow::buildUI() {
     calibErrorTable_->setAlternatingRowColors(true);
     lblCaptured_ = new QLabel("Captured: 0", tabCal);
 
+    calv->addWidget(gbMethod);
     calv->addWidget(gbBoard);
     calv->addWidget(btnGrab_);
     calv->addWidget(btnReset_);
@@ -460,8 +494,8 @@ void MainWindow::buildUI() {
 
     actionTabs_->addTab(tabCal, "Calibration");
     actionTabs_->addTab(tabTrk, "Tracking");
-    // Right-side parameters must follow left mode; disable manual tab switching.
-    if (actionTabs_->tabBar()) actionTabs_->tabBar()->setEnabled(false);
+    // Right-side parameters must follow left mode; hide tab labels completely.
+    if (actionTabs_->tabBar()) actionTabs_->tabBar()->hide();
 
     dv->addWidget(actionTabs_);
 
@@ -1142,6 +1176,10 @@ void MainWindow::onResetFrames() {
 }
 
 void MainWindow::onComputeCalibration() {
+  if (cbCalibMethod_ && cbCalibMethod_->currentIndex() != 0) {
+    QMessageBox::information(this, "Calibration", "This calibration method is reserved and not implemented yet.");
+    return;
+  }
   // Use all frames from the two Calibration-tab sources (no Grab required).
   std::vector<int> idx;
   {
@@ -1330,8 +1368,17 @@ bool MainWindow::runCalibrationOnPairs(const std::vector<int>& pairIndices, bool
   has_computed_calib_ = true;
   if (btnSaveCalib_) btnSaveCalib_->setEnabled(true);
   if (solveWorker_) solveWorker_->setStaticData(&cams_, &tag_corner_map_);
-  if (lblCalibProgress_) lblCalibProgress_->setText(QString("Progress: done, mean RMS=%1").arg(rms, 0, 'f', 4));
-  logLine(QString("Calibration OK. mean RMS=%1").arg(rms));
+  auto qualityText = [](double val)->QString {
+    if (val < 0.5) return "Excellent";
+    if (val < 1.0) return "Good";
+    if (val < 2.0) return "Fair";
+    return "Poor";
+  };
+  const QString quality = qualityText(rms);
+  if (lblCalibProgress_) {
+    lblCalibProgress_->setText(QString("Progress: done, mean RMS=%1 (%2)").arg(rms, 0, 'f', 4).arg(quality));
+  }
+  logLine(QString("Calibration OK. mean RMS=%1 (%2)").arg(rms, 0, 'f', 4).arg(quality));
   return true;
 }
 
