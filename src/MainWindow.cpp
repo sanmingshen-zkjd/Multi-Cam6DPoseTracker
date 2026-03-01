@@ -815,13 +815,21 @@ void MainWindow::onTick() {
   }
     // Heavy overlay (chessboard / tag detection) throttled to keep UI responsive
   // Heavy overlay (AprilTag/chessboard detection) can block UI and cause stutter.
-  // During active playback, render raw frames for smoothness; run overlay mainly when paused.
-  if (!playback_running_) {
-    ui_frame_skip_ = (ui_frame_skip_ + 1) % ui_overlay_div_;
-    if (ui_frame_skip_ == 0) {
-      if (mode_==CALIB) overlayCalibration(vis, frames);
-      else overlayTracking(vis, frames);
+  // NOTE: playback_running_ is only true for the sync Play button path, but sources may
+  // still be actively reading via Pause/Resume flow. Detect active sources directly.
+  bool anySourceRunning = false;
+  {
+    QMutexLocker lock(&sources_mutex_);
+    for (bool en : source_enabled_) {
+      if (en) { anySourceRunning = true; break; }
     }
+  }
+
+  const int overlayDiv = anySourceRunning ? std::max(ui_overlay_div_, 12) : ui_overlay_div_;
+  ui_frame_skip_ = (ui_frame_skip_ + 1) % overlayDiv;
+  if (ui_frame_skip_ == 0) {
+    if (mode_==CALIB) overlayCalibration(vis, frames);
+    else overlayTracking(vis, frames);
   }
 
   updateSourceViews(vis);
