@@ -628,6 +628,14 @@ void MainWindow::rebuildSourceViews() {
     lineBtn->setCheckable(true);
     panBtn->setChecked(true);
 
+    panBtn->setText("Pan");
+    pointBtn->setText("Point");
+    lineBtn->setText("Line");
+    zoomInBtn->setText("Zoom+");
+    zoomOutBtn->setText("Zoom-");
+    resetBtn->setText("Reset");
+    clearBtn->setText("Clear");
+
     panBtn->setToolTip("Pan view");
     pointBtn->setToolTip("Draw point");
     lineBtn->setToolTip("Draw line");
@@ -644,10 +652,11 @@ void MainWindow::rebuildSourceViews() {
     QWidget* topBar = new QWidget(canvas);
     topBar->setAttribute(Qt::WA_StyledBackground, false);
     QHBoxLayout* tb = new QHBoxLayout(topBar);
-    tb->setContentsMargins(6,6,6,0);
+    tb->setContentsMargins(6,0,6,6);
     tb->setSpacing(2);
     for (QToolButton* b : {panBtn, pointBtn, lineBtn, zoomInBtn, zoomOutBtn, resetBtn, clearBtn}) {
       b->setAutoRaise(true);
+      b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
       tb->addWidget(b);
     }
     tb->addStretch(1);
@@ -689,7 +698,7 @@ void MainWindow::rebuildSourceViews() {
     });
 
     overlay->addWidget(v, 0, 0);
-    overlay->addWidget(topBar, 0, 0, Qt::AlignTop | Qt::AlignLeft);
+    overlay->addWidget(topBar, 0, 0, Qt::AlignBottom | Qt::AlignLeft);
     pv->addWidget(canvas, 1);
 
     sourceViews_.push_back(v);
