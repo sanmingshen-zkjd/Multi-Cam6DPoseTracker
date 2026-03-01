@@ -2,6 +2,7 @@
 #include <QMainWindow>
 #include <QThread>
 #include <QMenuBar>
+#include <QMenu>
 #include <QAction>
 #include <QDockWidget>
 #include <QTimer>
@@ -268,6 +269,8 @@ private:
   //QLabel* lblPlayState_=nullptr;
   QPushButton* btnModeCalib_=nullptr;
   QPushButton* btnModeTrack_=nullptr;
+  QPushButton* btnModeCapture_=nullptr;
+  QToolButton* btnFileMenu_=nullptr;
   QTabWidget* actionTabs_=nullptr;
 
   // Calibration tab

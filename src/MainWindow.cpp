@@ -224,7 +224,33 @@ MainWindow::~MainWindow()
 void MainWindow::buildUI() {
     // Central view
     QWidget* central = new QWidget(this);
-    QVBoxLayout* v = new QVBoxLayout(central);
+    QHBoxLayout* root = new QHBoxLayout(central);
+
+    QWidget* sideBar = new QWidget(central);
+    sideBar->setFixedWidth(130);
+    QVBoxLayout* sv = new QVBoxLayout(sideBar);
+    sv->setContentsMargins(6, 6, 6, 6);
+    sv->setSpacing(8);
+    btnModeCapture_ = new QPushButton("Capture", sideBar);
+    btnModeCalib_ = new QPushButton("Calibration", sideBar);
+    btnModeTrack_ = new QPushButton("Tracking", sideBar);
+    btnModeCapture_->setCheckable(true);
+    btnModeCalib_->setCheckable(true);
+    btnModeTrack_->setCheckable(true);
+    btnModeCapture_->setChecked(true);
+    sv->addWidget(btnModeCapture_);
+    sv->addWidget(btnModeCalib_);
+    sv->addWidget(btnModeTrack_);
+    sv->addStretch(1);
+    btnFileMenu_ = new QToolButton(sideBar);
+    btnFileMenu_->setText("File");
+    btnFileMenu_->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    btnFileMenu_->setPopupMode(QToolButton::InstantPopup);
+    sv->addWidget(btnFileMenu_);
+    root->addWidget(sideBar);
+
+    QWidget* mainPane = new QWidget(central);
+    QVBoxLayout* v = new QVBoxLayout(mainPane);
 
     // Top mode tabs
     modeTabs_ = new QTabWidget(central);
@@ -232,7 +258,7 @@ void MainWindow::buildUI() {
     modeTabs_->addTab(new QWidget(modeTabs_), "Calibration");
     modeTabs_->addTab(new QWidget(modeTabs_), "Tracking");
     modeTabs_->setCurrentIndex(0);
-    v->addWidget(modeTabs_);
+    modeTabs_->setVisible(false);
     connect(modeTabs_, &QTabWidget::currentChanged, this, &MainWindow::onModeTabChanged);
 
     QHBoxLayout* topSourceBar = new QHBoxLayout();
@@ -308,7 +334,9 @@ void MainWindow::buildUI() {
     playProgressRow->addWidget(lblTotalFrame_);
     v->addLayout(playProgressRow);
 
+    root->addWidget(mainPane, 1);
     setCentralWidget(central);
+    menuBar()->hide();
 
     connect(btnAddCam_, &QToolButton::clicked, this, &MainWindow::onAddCamera);
     connect(btnAddVideo_, &QToolButton::clicked, this, &MainWindow::onAddVideo);
@@ -320,11 +348,15 @@ void MainWindow::buildUI() {
     connect(btnStepNext_, &QToolButton::clicked, this, &MainWindow::onStepNextFrame);
     connect(progressSlider_, &QSlider::sliderReleased, this, &MainWindow::onProgressSliderReleased);
     connect(editCurFrame_, &QLineEdit::returnPressed, this, &MainWindow::onFrameJumpReturnPressed);
-    QMenu* fileMenu = menuBar()->addMenu("File");
+    QMenu* fileMenu = new QMenu(btnFileMenu_);
     actSaveProject_ = fileMenu->addAction("Save Project...");
     actLoadProject_ = fileMenu->addAction("Load Project...");
+    btnFileMenu_->setMenu(fileMenu);
     connect(actSaveProject_, &QAction::triggered, this, &MainWindow::onSaveProject);
     connect(actLoadProject_, &QAction::triggered, this, &MainWindow::onLoadProject);
+    connect(btnModeCapture_, &QPushButton::clicked, this, &MainWindow::onModeCapture);
+    connect(btnModeCalib_, &QPushButton::clicked, this, &MainWindow::onModeCalibration);
+    connect(btnModeTrack_, &QPushButton::clicked, this, &MainWindow::onModeTracking);
 
     // Right dock: actions + log
     QDockWidget* dock = new QDockWidget("Actions", this);
@@ -931,6 +963,9 @@ void MainWindow::onRemoveSource() {
 
 void MainWindow::onModeCalibration() {
   mode_ = CALIB;
+  if (btnModeCapture_) btnModeCapture_->setChecked(false);
+  if (btnModeCalib_) btnModeCalib_->setChecked(true);
+  if (btnModeTrack_) btnModeTrack_->setChecked(false);
   if (btnAddCam_) btnAddCam_->setVisible(false);
   if (btnAddVideo_) btnAddVideo_->setVisible(true);
   if (btnAddImgSeq_) btnAddImgSeq_->setVisible(true);
@@ -943,6 +978,9 @@ void MainWindow::onModeCalibration() {
 
 void MainWindow::onModeTracking() {
   mode_ = TRACK;
+  if (btnModeCapture_) btnModeCapture_->setChecked(false);
+  if (btnModeCalib_) btnModeCalib_->setChecked(false);
+  if (btnModeTrack_) btnModeTrack_->setChecked(true);
   if (btnAddCam_) btnAddCam_->setVisible(false);
   if (btnAddVideo_) btnAddVideo_->setVisible(true);
   if (btnAddImgSeq_) btnAddImgSeq_->setVisible(true);
@@ -955,6 +993,9 @@ void MainWindow::onModeTracking() {
 
 void MainWindow::onModeCapture() {
   mode_ = CAPTURE;
+  if (btnModeCapture_) btnModeCapture_->setChecked(true);
+  if (btnModeCalib_) btnModeCalib_->setChecked(false);
+  if (btnModeTrack_) btnModeTrack_->setChecked(false);
   if (btnAddCam_) btnAddCam_->setVisible(true);
   if (btnAddVideo_) btnAddVideo_->setVisible(false);
   if (btnAddImgSeq_) btnAddImgSeq_->setVisible(false);
