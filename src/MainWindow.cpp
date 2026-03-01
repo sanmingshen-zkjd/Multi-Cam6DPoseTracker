@@ -228,9 +228,9 @@ void MainWindow::buildUI() {
 
     QWidget* sideBar = new QWidget(central);
     sideBar->setObjectName("leftSidebar");
-    sideBar->setFixedWidth(128);
+    sideBar->setFixedWidth(64);
     QVBoxLayout* sv = new QVBoxLayout(sideBar);
-    sv->setContentsMargins(12, 12, 12, 12);
+    sv->setContentsMargins(6, 8, 6, 8);
     sv->setSpacing(10);
 
     QLabel* appTitle = new QLabel("MCToolkit", sideBar);
@@ -276,7 +276,7 @@ void MainWindow::buildUI() {
     sideBar->setStyleSheet(
       "#leftSidebar{background:#1f232b;border-right:1px solid #3a4250;}"
       "#sidebarTitle{font-size:12px;font-weight:700;color:#f4f7fb;padding:4px 4px;line-height:1.1;}"
-      "QTabBar::tab{background:transparent;color:#c8d0da;padding:6px 6px;text-align:left;border-radius:6px;margin:2px 0;min-width:72px;}"
+      "QTabBar::tab{background:transparent;color:#c8d0da;padding:4px 4px;text-align:left;border-radius:6px;margin:2px 0;min-width:44px;}"
       "QTabBar::tab:selected{background:#3b82f6;color:white;font-weight:600;}"
       "QTabBar::tab:hover:!selected{background:#2a3140;color:#f0f4f8;}"
       "QToolButton{background:#2b3340;border:1px solid #4b586d;border-radius:6px;padding:6px 6px;color:#eef2f8;text-align:left;}"
