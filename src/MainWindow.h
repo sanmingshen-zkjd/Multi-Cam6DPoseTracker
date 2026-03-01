@@ -28,6 +28,7 @@
 #include <QGraphicsLineItem>
 #include <QMouseEvent>
 #include <QWheelEvent>
+#include <QResizeEvent>
 #include <QSlider>
 #include <QProgressBar>
 #include <QTableWidget>
@@ -74,6 +75,7 @@ protected:
   void wheelEvent(QWheelEvent* e) override;
   void mousePressEvent(QMouseEvent* e) override;
   void mouseMoveEvent(QMouseEvent* e) override;
+  void resizeEvent(QResizeEvent* e) override;
 
 private:
   void applyZoom(double factor);
@@ -255,6 +257,7 @@ private:
   QToolButton* btnClearAnno_=nullptr;
   QLabel* lblLineState_=nullptr;
   QSlider* progressSlider_=nullptr;
+  QLabel* lblResolution_=nullptr;
   //QCheckBox* chkSyncPlay_=nullptr;
   //QLabel* lblPlayState_=nullptr;
   QPushButton* btnSaveProject_=nullptr;

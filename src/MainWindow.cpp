@@ -21,6 +21,7 @@
 #include <QHeaderView>
 #include <QTabBar>
 #include <QStyle>
+#include <QFrame>
 
 static QString nowStr() {
   return QDateTime::currentDateTime().toString("hh:mm:ss");
@@ -49,7 +50,8 @@ void ImageViewer::setImage(const QImage& img) {
   }
   pixmapItem_->setPixmap(QPixmap::fromImage(img));
   scene_.setSceneRect(pixmapItem_->boundingRect());
-  if (zoomFactor_ == 1.0 && transform().isIdentity()) {
+  if (zoomFactor_ == 1.0) {
+    resetTransform();
     fitInView(pixmapItem_, Qt::KeepAspectRatio);
   }
 }
@@ -88,7 +90,6 @@ void ImageViewer::clearAnnotations() {
   }
   previewLine_ = nullptr;
   lineDrawing_ = false;
-  emit linePreviewText("Line: idle");
 }
 
 void ImageViewer::applyZoom(double factor) {
@@ -114,6 +115,7 @@ void ImageViewer::mousePressEvent(QMouseEvent* e) {
 
   if (toolMode_ == PointTool) {
     scene_.addEllipse(p.x()-3, p.y()-3, 6, 6, QPen(QColor(255,80,80), 2), QBrush(QColor(255,80,80)));
+    setToolMode(PanTool);
     return;
   }
 
@@ -131,7 +133,7 @@ void ImageViewer::mousePressEvent(QMouseEvent* e) {
         previewLine_ = nullptr;
       }
       lineDrawing_ = false;
-      emit linePreviewText(QString("Line: done len=%1 px").arg(QLineF(lineStart_, p).length(), 0, 'f', 1));
+      setToolMode(PanTool);
     }
   }
 }
@@ -140,10 +142,17 @@ void ImageViewer::mouseMoveEvent(QMouseEvent* e) {
   if (toolMode_ == LineTool && lineDrawing_ && previewLine_) {
     QPointF p = mapToScene(e->pos());
     previewLine_->setLine(QLineF(lineStart_, p));
-    emit linePreviewText(QString("Line: drawing len=%1 px").arg(QLineF(lineStart_, p).length(), 0, 'f', 1));
     return;
   }
   QGraphicsView::mouseMoveEvent(e);
+}
+
+void ImageViewer::resizeEvent(QResizeEvent* e) {
+  QGraphicsView::resizeEvent(e);
+  if (zoomFactor_ == 1.0 && pixmapItem_ && !pixmapItem_->pixmap().isNull()) {
+    resetTransform();
+    fitInView(pixmapItem_, Qt::KeepAspectRatio);
+  }
 }
 
 MainWindow::MainWindow(const std::vector<InputSource>& sources,
@@ -245,8 +254,18 @@ void MainWindow::buildUI() {
     topSourceBar->addWidget(btnAddVideo_);
     topSourceBar->addWidget(btnAddImgSeq_);
     topSourceBar->addWidget(btnRemoveSource_);
+    topSourceBar->addSpacing(10);
+    btnSaveProject_ = new QPushButton("Save Project", central);
+    btnLoadProject_ = new QPushButton("Load Project", central);
+    topSourceBar->addWidget(btnSaveProject_);
+    topSourceBar->addWidget(btnLoadProject_);
     topSourceBar->addStretch(1);
     v->addLayout(topSourceBar);
+
+    QFrame* topSep = new QFrame(central);
+    topSep->setFrameShape(QFrame::HLine);
+    topSep->setFrameShadow(QFrame::Sunken);
+    v->addWidget(topSep);
 
     btnPauseResume_ = new QToolButton(central);
     btnPlayAll_ = new QToolButton(central);
@@ -288,14 +307,6 @@ void MainWindow::buildUI() {
     progressSlider_->setPageStep(30);
     playProgressRow->addWidget(progressSlider_, 1);
     v->addLayout(playProgressRow);
-
-    QHBoxLayout* pbtns = new QHBoxLayout();
-    btnSaveProject_ = new QPushButton("Save Project", central);
-    btnLoadProject_ = new QPushButton("Load Project", central);
-    pbtns->addWidget(btnSaveProject_);
-    pbtns->addWidget(btnLoadProject_);
-    pbtns->addStretch(1);
-    v->addLayout(pbtns);
 
     setCentralWidget(central);
 
@@ -481,6 +492,9 @@ void MainWindow::buildUI() {
     dock->setWidget(dockw);
     addDockWidget(Qt::RightDockWidgetArea, dock);
 
+    lblResolution_ = new QLabel("Resolution: -", this);
+    statusBar()->addPermanentWidget(lblResolution_);
+
     statusBar()->showMessage("Ready");
     refreshSourceList();
     // Per-source docks are OFF by default to avoid duplicate display.
@@ -581,7 +595,6 @@ void MainWindow::rebuildSourceViews() {
     QToolButton* zoomOutBtn = new QToolButton(panel);
     QToolButton* resetBtn = new QToolButton(panel);
     QToolButton* clearBtn = new QToolButton(panel);
-    QLabel* lineState = new QLabel("Line: idle", panel);
 
     panBtn->setIcon(themedIcon("transform-move", QStyle::SP_ArrowUp));
     pointBtn->setIcon(themedIcon("draw-freehand", QStyle::SP_DialogYesButton));
@@ -601,13 +614,11 @@ void MainWindow::rebuildSourceViews() {
       tb->addWidget(b);
     }
     tb->addStretch(1);
-    tb->addWidget(lineState);
     pv->addLayout(tb);
 
     ImageViewer* v = new ImageViewer(panel);
     v->setMinimumSize(480, 270);
     v->setToolMode(ImageViewer::PanTool);
-    connect(v, &ImageViewer::linePreviewText, lineState, &QLabel::setText);
     connect(panBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
       panBtn->setChecked(true); pointBtn->setChecked(false); lineBtn->setChecked(false);
       v->setToolMode(ImageViewer::PanTool);
@@ -635,6 +646,7 @@ void MainWindow::rebuildSourceViews() {
 
 void MainWindow::updateSourceViews(const std::vector<cv::Mat>& frames) {
   int n = std::min((int)sourceViews_.size(), std::min(2, (int)active_view_source_indices_.size()));
+  QStringList resText;
   for (int i=0; i<n; ++i) {
     int srcIdx = active_view_source_indices_[i];
     if (!sourceViews_[i] || srcIdx < 0 || srcIdx >= (int)frames.size()) continue;
@@ -642,10 +654,14 @@ void MainWindow::updateSourceViews(const std::vector<cv::Mat>& frames) {
       sourceViews_[i]->setImage(QImage());
       continue;
     }
+    resText << QString("S%1: %2x%3").arg(i+1).arg(frames[srcIdx].cols).arg(frames[srcIdx].rows);
     sourceViews_[i]->setImage(matToQImage(frames[srcIdx]));
   }
   for (int i=n; i<(int)sourceViews_.size(); ++i) {
     if (sourceViews_[i]) sourceViews_[i]->setImage(QImage());
+  }
+  if (lblResolution_) {
+    lblResolution_->setText(resText.isEmpty() ? "Resolution: -" : QString("Resolution: %1").arg(resText.join(" | ")));
   }
 }
 
@@ -847,6 +863,7 @@ void MainWindow::onModeCalibration() {
   if (modeTabs_ && modeTabs_->currentIndex()!=0) modeTabs_->setCurrentIndex(0);
   if (actionTabs_) actionTabs_->setCurrentIndex(0);
   rebuildSourceViews();
+  updateSourceViews(last_frames_);
   logLine("Switched to Calibration mode.");
 }
 
@@ -855,6 +872,7 @@ void MainWindow::onModeTracking() {
   if (modeTabs_ && modeTabs_->currentIndex()!=1) modeTabs_->setCurrentIndex(1);
   if (actionTabs_) actionTabs_->setCurrentIndex(1);
   rebuildSourceViews();
+  updateSourceViews(last_frames_);
   logLine("Switched to Tracking mode.");
 }
 
