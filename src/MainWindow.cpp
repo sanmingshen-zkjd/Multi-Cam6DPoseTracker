@@ -274,7 +274,7 @@ void MainWindow::buildUI() {
     sv->addWidget(btnFileMenu_);
     root->addWidget(sideBar);
     sideBar->setStyleSheet(
-      "#leftSidebar{background:#1f232b;border-right:1px solid #3a4250;}"
+      "#leftSidebar{background:#1f232b;border-right:1px solid #4a5568;}"
       "#sidebarTitle{font-size:12px;font-weight:700;color:#f4f7fb;padding:4px 4px;line-height:1.1;}"
       "QTabBar::tab{background:transparent;color:#c8d0da;padding:4px 4px;text-align:left;border-radius:6px;margin:2px 0;min-width:44px;}"
       "QTabBar::tab:selected{background:#3b82f6;color:white;font-weight:600;}"
@@ -283,13 +283,9 @@ void MainWindow::buildUI() {
       "QToolButton::menu-indicator{subcontrol-position:right center;right:8px;}"
       "QFrame{color:#394150;background:#394150;}");
 
-    QFrame* sideSep = new QFrame(central);
-    sideSep->setFrameShape(QFrame::VLine);
-    sideSep->setFrameShadow(QFrame::Plain);
-    root->addWidget(sideSep);
-
-    const int sidebarReserved = sideBar->width() + 18;
-    statusBar()->setStyleSheet(QString("QStatusBar{padding-left:%1px;}").arg(sidebarReserved));
+    const int sidebarReserved = sideBar->width() + 12;
+    statusBar()->setStyleSheet(QString("QStatusBar{padding-left:%1px;border-top:1px solid #3a4250;}"
+                                      "QStatusBar::item{border:none;}").arg(sidebarReserved));
 
     QWidget* mainPane = new QWidget(central);
     QVBoxLayout* v = new QVBoxLayout(mainPane);
@@ -640,7 +636,7 @@ void MainWindow::refreshSourceList() {
     label += en ? "[RUN]" : "[PAUSED]";
     status << label;
   }
-  Q_UNUSED(status);
+  Q_UNUSED(status); // status bar text is centralized in updateStatus().
 }
 
 std::vector<int> MainWindow::activeSourceIndices() const {
@@ -1200,7 +1196,13 @@ void MainWindow::updateStatus() {
   lblCaptured_->setText(QString("Captured: %1").arg(calibrator_->captured()));
   lblInliers_->setText(QString("Inliers: %1").arg(last_inliers_));
 
-  statusBar()->clearMessage();
+  QString m = (mode_==CAPTURE) ? "Capture" : ((mode_==CALIB) ? "Calibration" : "Tracking");
+  statusBar()->showMessage(QString("Mode: %1 | Sources: %2 | Captured: %3 | Inliers: %4 | FPS: %5")
+    .arg(m)
+    .arg((int)sources_.size())
+    .arg(calibrator_->captured())
+    .arg(last_inliers_)
+    .arg(fps_, 0, 'f', 1));
 }
 
 void MainWindow::onTick() {
