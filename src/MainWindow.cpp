@@ -19,6 +19,7 @@
 #include <QScrollArea>
 #include <QApplication>
 #include <QHeaderView>
+#include <QTabBar>
 
 static QString nowStr() {
   return QDateTime::currentDateTime().toString("hh:mm:ss");
@@ -459,6 +460,8 @@ void MainWindow::buildUI() {
 
     actionTabs_->addTab(tabCal, "Calibration");
     actionTabs_->addTab(tabTrk, "Tracking");
+    // Right-side parameters must follow left mode; disable manual tab switching.
+    if (actionTabs_->tabBar()) actionTabs_->tabBar()->setEnabled(false);
 
     dv->addWidget(actionTabs_);
 
@@ -1198,6 +1201,7 @@ void MainWindow::onComputeCalibration() {
   };
 
   int frameId = 0;
+  MultiCamCalibrator previewCalib(2, cv::Size(board_w_, board_h_), square_);
   while (true) {
     cv::Mat a, b;
     {
@@ -1209,6 +1213,25 @@ void MainWindow::onComputeCalibration() {
     p.left = a;
     p.right = b;
     calib_pairs_.push_back(std::move(p));
+
+    // Preview current frame and chessboard detection on the left viewer while scanning.
+    std::vector<cv::Mat> pair = {a, b};
+    std::vector<std::vector<cv::Point2f>> corners;
+    std::vector<bool> ok;
+    previewCalib.detectAndMaybeStore(pair, false, &corners, &ok);
+    cv::Mat visA = a.clone();
+    cv::Mat visB = b.clone();
+    if (!corners.empty() && corners.size() >= 2) {
+      cv::drawChessboardCorners(visA, cv::Size(board_w_, board_h_), corners[0], !ok.empty() && ok[0]);
+      cv::drawChessboardCorners(visB, cv::Size(board_w_, board_h_), corners[1], ok.size() > 1 && ok[1]);
+    }
+    {
+      QMutexLocker frameLock(&frames_mutex_);
+      if (idx[0] >= 0 && idx[0] < (int)last_frames_.size()) last_frames_[idx[0]] = visA;
+      if (idx[1] >= 0 && idx[1] < (int)last_frames_.size()) last_frames_[idx[1]] = visB;
+      updateSourceViews(last_frames_);
+    }
+
     frameId++;
 
     if (calibProgressBar_ && totalFrames > 0) calibProgressBar_->setValue(std::min(frameId, totalFrames));
@@ -1251,10 +1274,11 @@ bool MainWindow::runCalibrationOnPairs(const std::vector<int>& pairIndices, bool
   }
   if (lblCalibProgress_) lblCalibProgress_->setText("Progress: detecting chessboard...");
 
-  calibrator_->reset();
+  MultiCamCalibrator workCalib(2, cv::Size(board_w_, board_h_), square_);
   std::vector<cv::Size> sizes;
   bool sizesSet = false;
   int usedPairs = 0;
+  std::vector<int> acceptedPairIds;
   for (int i = 0; i < (int)pairIndices.size(); ++i) {
     int id = pairIndices[i];
     if (id < 0 || id >= (int)calib_pairs_.size()) continue;
@@ -1264,7 +1288,10 @@ bool MainWindow::runCalibrationOnPairs(const std::vector<int>& pairIndices, bool
       sizes = {p.left.size(), p.right.size()};
       sizesSet = true;
     }
-    if (calibrator_->detectAndMaybeStore(pair, true)) usedPairs++;
+    if (workCalib.detectAndMaybeStore(pair, true)) {
+      usedPairs++;
+      acceptedPairIds.push_back(id);
+    }
     if (calibProgressBar_) calibProgressBar_->setValue(i + 1);
     QApplication::processEvents();
   }
@@ -1277,17 +1304,17 @@ bool MainWindow::runCalibrationOnPairs(const std::vector<int>& pairIndices, bool
   if (lblCalibProgress_) lblCalibProgress_->setText("Progress: solving calibration...");
   double rms=0.0;
   std::vector<CameraModel> out;
-  if (!calibrator_->calibrate(sizes, out, rms)) {
+  if (!workCalib.calibrate(sizes, out, rms)) {
     QMessageBox::warning(this, "Calibration", "Calibration failed. Ensure enough captures and paired frames with cam0.");
     logLine("Calibration failed.");
     return false;
   }
 
   std::vector<double> selectedRmse;
-  calibrator_->computeFrameReprojErrors(out, selectedRmse);
+  workCalib.computeFrameReprojErrors(out, selectedRmse);
   calib_pair_rmse_.assign(calib_pairs_.size(), -1.0);
-  for (int i = 0; i < (int)pairIndices.size() && i < (int)selectedRmse.size(); ++i) {
-    int id = pairIndices[i];
+  for (int i = 0; i < (int)acceptedPairIds.size() && i < (int)selectedRmse.size(); ++i) {
+    int id = acceptedPairIds[i];
     if (id >= 0 && id < (int)calib_pair_rmse_.size()) calib_pair_rmse_[id] = selectedRmse[i];
   }
 
