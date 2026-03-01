@@ -33,6 +33,7 @@
 #include <QProgressBar>
 #include <QTableWidget>
 #include <QToolButton>
+#include <QLineEdit>
 #include <QStringList>
 
 #include <opencv2/opencv.hpp>
@@ -118,6 +119,7 @@ private slots:
   void onResetView();
   void onClearAnnotations();
   void onProgressSliderReleased();
+  void onFrameJumpReturnPressed();
 
   // Calibration actions
   void onGrabFrame();
@@ -257,6 +259,8 @@ private:
   QToolButton* btnClearAnno_=nullptr;
   QLabel* lblLineState_=nullptr;
   QSlider* progressSlider_=nullptr;
+  QLineEdit* editCurFrame_=nullptr;
+  QLabel* lblTotalFrame_=nullptr;
   QLabel* lblResolution_=nullptr;
   //QCheckBox* chkSyncPlay_=nullptr;
   //QLabel* lblPlayState_=nullptr;

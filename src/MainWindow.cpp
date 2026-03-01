@@ -22,6 +22,8 @@
 #include <QTabBar>
 #include <QStyle>
 #include <QFrame>
+#include <QProgressDialog>
+#include <QIntValidator>
 
 static QString nowStr() {
   return QDateTime::currentDateTime().toString("hh:mm:ss");
@@ -306,6 +308,13 @@ void MainWindow::buildUI() {
     progressSlider_->setSingleStep(1);
     progressSlider_->setPageStep(30);
     playProgressRow->addWidget(progressSlider_, 1);
+    editCurFrame_ = new QLineEdit("0", central);
+    editCurFrame_->setFixedWidth(70);
+    editCurFrame_->setAlignment(Qt::AlignCenter);
+    editCurFrame_->setValidator(new QIntValidator(0, 9999999, editCurFrame_));
+    lblTotalFrame_ = new QLabel("/ 0", central);
+    playProgressRow->addWidget(editCurFrame_);
+    playProgressRow->addWidget(lblTotalFrame_);
     v->addLayout(playProgressRow);
 
     setCentralWidget(central);
@@ -320,6 +329,7 @@ void MainWindow::buildUI() {
     connect(btnStepPrev_, &QToolButton::clicked, this, &MainWindow::onStepPrevFrame);
     connect(btnStepNext_, &QToolButton::clicked, this, &MainWindow::onStepNextFrame);
     connect(progressSlider_, &QSlider::sliderReleased, this, &MainWindow::onProgressSliderReleased);
+    connect(editCurFrame_, &QLineEdit::returnPressed, this, &MainWindow::onFrameJumpReturnPressed);
     connect(btnSaveProject_, &QPushButton::clicked, this, &MainWindow::onSaveProject);
     connect(btnLoadProject_, &QPushButton::clicked, this, &MainWindow::onLoadProject);
 
@@ -387,6 +397,10 @@ void MainWindow::buildUI() {
     calibErrorTable_->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     calibErrorTable_->verticalHeader()->setVisible(false);
     calibErrorTable_->setAlternatingRowColors(true);
+    calibErrorTable_->setStyleSheet(
+      "QTableWidget{alternate-background-color:#2b313a;background:#252b33;color:#e8edf2;gridline-color:#3a4350;}"
+      "QHeaderView::section{background:#303744;color:#e8edf2;border:1px solid #3d4654;padding:4px;}"
+      "QTableWidget::item{padding:4px;}");
     lblCaptured_ = new QLabel("Captured: 0", tabCal);
 
     calv->addWidget(gbMethod);
@@ -1292,6 +1306,10 @@ void MainWindow::onComputeCalibration() {
 
   int frameId = 0;
   MultiCamCalibrator previewCalib(2, cv::Size(board_w_, board_h_), square_);
+  QProgressDialog scanProgress("Scanning frames for calibration...", QString(), 0, std::max(1, totalFrames), this);
+  scanProgress.setWindowModality(Qt::ApplicationModal);
+  scanProgress.setCancelButton(nullptr);
+  scanProgress.setMinimumDuration(0);
   while (true) {
     cv::Mat a, b;
     {
@@ -1325,9 +1343,11 @@ void MainWindow::onComputeCalibration() {
     frameId++;
 
     if (calibProgressBar_ && totalFrames > 0) calibProgressBar_->setValue(std::min(frameId, totalFrames));
+    scanProgress.setValue(std::min(frameId, std::max(1, totalFrames)));
     if (lblCalibProgress_) lblCalibProgress_->setText(QString("Progress: scanning %1 / %2").arg(frameId).arg(std::max(totalFrames, frameId)));
     QApplication::processEvents();
   }
+  scanProgress.setValue(std::max(1, totalFrames));
 
   if (calib_pairs_.empty()) {
     QMessageBox::warning(this, "Calibration", "No frame pairs found from the selected sources.");
@@ -1365,6 +1385,10 @@ bool MainWindow::runCalibrationOnPairs(const std::vector<int>& pairIndices, bool
   if (lblCalibProgress_) lblCalibProgress_->setText("Progress: detecting chessboard...");
 
   MultiCamCalibrator workCalib(2, cv::Size(board_w_, board_h_), square_);
+  QProgressDialog detectProgress("Detecting chessboards in selected frames...", QString(), 0, std::max(1, (int)pairIndices.size()), this);
+  detectProgress.setWindowModality(Qt::ApplicationModal);
+  detectProgress.setCancelButton(nullptr);
+  detectProgress.setMinimumDuration(0);
   std::vector<cv::Size> sizes;
   bool sizesSet = false;
   int usedPairs = 0;
@@ -1383,8 +1407,10 @@ bool MainWindow::runCalibrationOnPairs(const std::vector<int>& pairIndices, bool
       acceptedPairIds.push_back(id);
     }
     if (calibProgressBar_) calibProgressBar_->setValue(i + 1);
+    detectProgress.setValue(i + 1);
     QApplication::processEvents();
   }
+  detectProgress.setValue(std::max(1, (int)pairIndices.size()));
 
   if (usedPairs <= 0 || !sizesSet) {
     QMessageBox::warning(this, "Calibration", "No valid chessboard pairs found in selected frames.");
@@ -1392,13 +1418,21 @@ bool MainWindow::runCalibrationOnPairs(const std::vector<int>& pairIndices, bool
   }
 
   if (lblCalibProgress_) lblCalibProgress_->setText("Progress: solving calibration...");
+  QProgressDialog solveProgress("Solving calibration...", QString(), 0, 0, this);
+  solveProgress.setWindowModality(Qt::ApplicationModal);
+  solveProgress.setCancelButton(nullptr);
+  solveProgress.setMinimumDuration(0);
+  solveProgress.show();
+  QApplication::processEvents();
   double rms=0.0;
   std::vector<CameraModel> out;
   if (!workCalib.calibrate(sizes, out, rms)) {
+    solveProgress.close();
     QMessageBox::warning(this, "Calibration", "Calibration failed. Ensure enough captures and paired frames with cam0.");
     logLine("Calibration failed.");
     return false;
   }
+  solveProgress.close();
 
   std::vector<double> selectedRmse;
   workCalib.computeFrameReprojErrors(out, selectedRmse);
@@ -1789,6 +1823,8 @@ void MainWindow::updateProgressUI(int64_t frame, int64_t endFrame) {
   progressSlider_->blockSignals(true);
   progressSlider_->setValue(val);
   progressSlider_->blockSignals(false);
+  if (editCurFrame_) editCurFrame_->setText(QString::number(val));
+  if (lblTotalFrame_) lblTotalFrame_->setText(QString("/ %1").arg(maxVal));
 }
 
 
@@ -1891,6 +1927,16 @@ void MainWindow::onProgressSliderReleased() {
   }
   play_frame_ = target;
   stepAllVideos(0);
+}
+
+void MainWindow::onFrameJumpReturnPressed() {
+  if (!editCurFrame_ || !progressSlider_) return;
+  bool ok = false;
+  int target = editCurFrame_->text().toInt(&ok);
+  if (!ok) return;
+  target = std::max(progressSlider_->minimum(), std::min(progressSlider_->maximum(), target));
+  progressSlider_->setValue(target);
+  onProgressSliderReleased();
 }
 
 void MainWindow::onPlayAll() {

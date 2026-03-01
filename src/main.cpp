@@ -80,6 +80,8 @@ int main(int argc, char** argv) {
       "QPushButton:hover,QToolButton:hover{background:#384150;}"
       "QPushButton:pressed,QToolButton:pressed{background:#222831;}"
       "QTabBar::tab{padding:6px 12px;background:#2d333b;color:#e8edf2;}"
+      "QTabBar::tab:selected{background:#4b6ea8;color:#ffffff;font-weight:600;}"
+      "QTabBar::tab:!selected{background:#2d333b;color:#c6ced8;}"
       "QSlider::groove:horizontal{height:8px;background:#3a4250;border-radius:4px;}"
       "QSlider::handle:horizontal{width:16px;margin:-5px 0;background:#7aa2f7;border-radius:8px;}")
       .arg(minControlH));
