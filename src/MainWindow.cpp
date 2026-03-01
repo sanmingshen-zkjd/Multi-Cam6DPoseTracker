@@ -163,7 +163,6 @@ MainWindow::MainWindow(const std::vector<InputSource>& sources,
     buildUI();
     connect(&timer_, &QTimer::timeout, this, &MainWindow::onTick);
     timer_.start(33);
-    if (captureWorker_) QMetaObject::invokeMethod(captureWorker_, "start", Qt::QueuedConnection);
 
     // Start capture/solve threads
     captureWorker_ = new CaptureWorker(&sources_, &source_enabled_, &last_frames_, &sources_mutex_, 33);
@@ -604,8 +603,6 @@ void MainWindow::onAddCamera() {
   calibrator_.reset(new MultiCamCalibrator(std::max(1,num_cams_), cv::Size(board_w_, board_h_), square_));
   refreshSourceList();
   if (show_docks_) rebuildSourceDocks();
-  timer_.start(33);
-  if (captureWorker_) QMetaObject::invokeMethod(captureWorker_, "start", Qt::QueuedConnection);
 #endif
 }
 
@@ -656,8 +653,6 @@ void MainWindow::onAddVideo()
     if (show_docks_) rebuildSourceDocks();
     rebuildSourceViews();
     logLine(QString("Added video: %1").arg(path));
-    timer_.start(33);
-    if (captureWorker_) QMetaObject::invokeMethod(captureWorker_, "start", Qt::QueuedConnection);
 }
 
 
@@ -707,8 +702,6 @@ void MainWindow::onAddImageSequence()
     if (show_docks_) rebuildSourceDocks();
     rebuildSourceViews();
     logLine(QString("Added image sequence: %1 (%2 frames)").arg(dir).arg(files.size()));
-    timer_.start(33);
-    if (captureWorker_) QMetaObject::invokeMethod(captureWorker_, "start", Qt::QueuedConnection);
 }
 
 void MainWindow::onRemoveSource() {
@@ -728,8 +721,6 @@ void MainWindow::onRemoveSource() {
   if (show_docks_) rebuildSourceDocks();
   rebuildSourceViews();
   logLine("Removed source.");
-  timer_.start(33);
-  if (captureWorker_) QMetaObject::invokeMethod(captureWorker_, "start", Qt::QueuedConnection);
 }
 
 void MainWindow::onModeCalibration() {
@@ -886,20 +877,19 @@ void MainWindow::onTick() {
   // Heavy overlay (AprilTag/chessboard detection) can block UI and cause stutter.
   // NOTE: playback_running_ is only true for the sync Play button path, but sources may
   // still be actively reading via Pause/Resume flow. Detect active sources directly.
-  bool anySourceRunning = false;
-  {
-    QMutexLocker lock(&sources_mutex_);
-    for (bool en : source_enabled_) {
-      if (en) { anySourceRunning = true; break; }
-    }
-  }
-
-  const int overlayDiv = anySourceRunning ? std::max(ui_overlay_div_, 12) : ui_overlay_div_;
-  ui_frame_skip_ = (ui_frame_skip_ + 1) % overlayDiv;
-  if (ui_frame_skip_ == 0) {
-    if (mode_==CALIB) overlayCalibration(vis, frames);
-    else overlayTracking(vis, frames);
-  }
+  //bool anySourceRunning = false;
+  //{
+  //  QMutexLocker lock(&sources_mutex_);
+  //  for (bool en : source_enabled_) {
+  //    if (en) { anySourceRunning = true; break; }
+  //  }
+  //}
+  //const int overlayDiv = anySourceRunning ? std::max(ui_overlay_div_, 12) : ui_overlay_div_;
+  //ui_frame_skip_ = (ui_frame_skip_ + 1) % overlayDiv;
+  //if (ui_frame_skip_ == 0) {
+  //  if (mode_==CALIB) overlayCalibration(vis, frames);
+  //  else overlayTracking(vis, frames);
+  //}
 
   updateSourceViews(vis);
 
@@ -1022,8 +1012,6 @@ bool MainWindow::fromProjectJson(const QJsonObject& o) {
   calibrator_.reset(new MultiCamCalibrator(std::max(1,num_cams_), cv::Size(board_w_, board_h_), square_));
   refreshSourceList();
   rebuildSourceViews();
-  timer_.start(33);
-  if (captureWorker_) QMetaObject::invokeMethod(captureWorker_, "start", Qt::QueuedConnection);
 
   // Bind file paths
   if (o.contains("tagmap_path")) {
@@ -1464,7 +1452,7 @@ void MainWindow::stepAllVideos(int delta) {
         f = cv::imread(src.seq_files[(int)target].toStdString(), cv::IMREAD_COLOR);
       } else {
         if (!src.cap.isOpened()) continue;
-        double cur = src.cap.get(cv::CAP_PROP_POS_FRAMES);
+        double cur = src.cap.get(cv::CAP_PROP_POS_FRAMES)-1;
         target = std::max<int64_t>(0, (int64_t)std::llround(cur) + delta);
         if (play_end_frame_ > 0) target = std::min<int64_t>(target, play_end_frame_-1);
         src.cap.set(cv::CAP_PROP_POS_FRAMES, (double)target);
@@ -1573,6 +1561,7 @@ void MainWindow::onPlayAll() {
   //    lblPlayState_->setText("State: PLAY (SYNC)");
 
   updatePlaybackParams();
+  timer_.start(33);
   QMetaObject::invokeMethod(captureWorker_, "start", Qt::QueuedConnection);
 }
 
