@@ -212,20 +212,13 @@ void MainWindow::buildUI() {
     QWidget* central = new QWidget(this);
     QVBoxLayout* v = new QVBoxLayout(central);
 
-    // Top mode buttons
-    QHBoxLayout* top = new QHBoxLayout();
-    btnModeCalib_ = new QPushButton("Calibration", this);
-    btnModeTrack_ = new QPushButton("Tracking", this);
-    btnModeCalib_->setCheckable(true);
-    btnModeTrack_->setCheckable(true);
-    btnModeCalib_->setChecked(true);
-    top->addWidget(btnModeCalib_);
-    top->addWidget(btnModeTrack_);
-    top->addStretch(1);
-    v->addLayout(top);
-
-    connect(btnModeCalib_, &QPushButton::clicked, this, &MainWindow::onModeCalibration);
-    connect(btnModeTrack_, &QPushButton::clicked, this, &MainWindow::onModeTracking);
+    // Top mode tabs
+    modeTabs_ = new QTabWidget(central);
+    modeTabs_->addTab(new QWidget(modeTabs_), "Calibration");
+    modeTabs_->addTab(new QWidget(modeTabs_), "Tracking");
+    modeTabs_->setCurrentIndex(0);
+    v->addWidget(modeTabs_);
+    connect(modeTabs_, &QTabWidget::currentChanged, this, &MainWindow::onModeTabChanged);
 
     viewsHost_ = new QWidget(this);
     viewsGrid_ = new QGridLayout(viewsHost_);
@@ -329,10 +322,10 @@ void MainWindow::buildUI() {
     QWidget* dockw = new QWidget(dock);
     QVBoxLayout* dv = new QVBoxLayout(dockw);
 
-    QTabWidget* tabs = new QTabWidget(dockw);
+    actionTabs_ = new QTabWidget(dockw);
 
     // Calibration tab
-    QWidget* tabCal = new QWidget(tabs);
+    QWidget* tabCal = new QWidget(actionTabs_);
     QVBoxLayout* calv = new QVBoxLayout(tabCal);
 
     QGroupBox* gbBoard = new QGroupBox("Chessboard Parameters", tabCal);
@@ -381,7 +374,7 @@ void MainWindow::buildUI() {
     connect(spSquare_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double){ rebuildCalibratorFromUI(true); });
 
     // Tracking tab
-    QWidget* tabTrk = new QWidget(tabs);
+    QWidget* tabTrk = new QWidget(actionTabs_);
     QVBoxLayout* trkv = new QVBoxLayout(tabTrk);
 
     btnLoadTag_ = new QPushButton("Load Tag Map (TXT)", tabTrk);
@@ -442,10 +435,10 @@ void MainWindow::buildUI() {
     connect(spInlierThresh_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double v){ inlier_thresh_px_=v; if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, pose_on_); });
     connect(cbTagDict_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int){ tag_dict_id_=cbTagDict_->currentData().toInt(); if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, pose_on_); });
 
-    tabs->addTab(tabCal, "Calibration");
-    tabs->addTab(tabTrk, "Tracking");
+    actionTabs_->addTab(tabCal, "Calibration");
+    actionTabs_->addTab(tabTrk, "Tracking");
 
-    dv->addWidget(tabs);
+    dv->addWidget(actionTabs_);
 
     // Log window
     log_ = new QTextEdit(dockw);
@@ -498,10 +491,19 @@ void MainWindow::refreshSourceList() {
     else if (s.is_image_seq) label = QString("ImgSeq:%1").arg(QFileInfo(s.seq_dir).fileName());
     else label = QFileInfo(s.video_path).fileName();
     bool en = (i < (int)source_enabled_.size()) ? source_enabled_[i] : true;
+    label += (s.mode_owner==0 ? "{Calib}" : "{Track}");
     label += en ? "[RUN]" : "[PAUSED]";
     status << label;
   }
   if (!status.isEmpty()) statusBar()->showMessage(QString("Sources: %1").arg(status.join(" | ")));
+}
+
+std::vector<int> MainWindow::activeSourceIndices() const {
+  std::vector<int> idx;
+  for (int i=0;i<(int)sources_.size();++i) {
+    if (sources_[i].mode_owner == (int)mode_) idx.push_back(i);
+  }
+  return idx;
 }
 
 void MainWindow::rebuildSourceViews() {
@@ -513,7 +515,8 @@ void MainWindow::rebuildSourceViews() {
   }
   sourceViews_.clear();
 
-  const int n = (int)sources_.size();
+  active_view_source_indices_ = activeSourceIndices();
+  const int n = std::min(2, (int)active_view_source_indices_.size());
   if (n <= 0) {
     QLabel* hint = new QLabel("No sources. Click AddVideo to create a viewer.", viewsHost_);
     hint->setAlignment(Qt::AlignCenter);
@@ -537,14 +540,15 @@ void MainWindow::rebuildSourceViews() {
 }
 
 void MainWindow::updateSourceViews(const std::vector<cv::Mat>& frames) {
-  int n = std::min((int)sourceViews_.size(), (int)frames.size());
+  int n = std::min((int)sourceViews_.size(), std::min(2, (int)active_view_source_indices_.size()));
   for (int i=0; i<n; ++i) {
-    if (!sourceViews_[i]) continue;
-    if (frames[i].empty()) {
+    int srcIdx = active_view_source_indices_[i];
+    if (!sourceViews_[i] || srcIdx < 0 || srcIdx >= (int)frames.size()) continue;
+    if (frames[srcIdx].empty()) {
       sourceViews_[i]->setImage(QImage());
       continue;
     }
-    sourceViews_[i]->setImage(matToQImage(frames[i]));
+    sourceViews_[i]->setImage(matToQImage(frames[srcIdx]));
   }
   for (int i=n; i<(int)sourceViews_.size(); ++i) {
     if (sourceViews_[i]) sourceViews_[i]->setImage(QImage());
@@ -612,8 +616,14 @@ void MainWindow::onAddVideo()
     QString path = QFileDialog::getOpenFileName(this, "Add Video", last,"Video (*.mp4 *.avi *.mov *.mkv);;All (*.*)");
     if (path.isEmpty()) return;
 
+    if ((int)activeSourceIndices().size() >= 2) {
+      QMessageBox::information(this, "Add Video", "Current tab already has 2 sources.");
+      return;
+    }
+
     InputSource s;
     s.is_cam = false;
+    s.mode_owner = (int)mode_;
     s.video_path = path;
     std::string p = QFile::encodeName(path).constData();
     s.cap.open(p);
@@ -669,9 +679,15 @@ void MainWindow::onAddImageSequence()
       return;
     }
 
+    if ((int)activeSourceIndices().size() >= 2) {
+      QMessageBox::information(this, "Add Image Sequence", "Current tab already has 2 sources.");
+      return;
+    }
+
     InputSource s;
     s.is_cam = false;
     s.is_image_seq = true;
+    s.mode_owner = (int)mode_;
     s.seq_dir = dir;
     s.video_path = dir;
     s.seq_idx = 0;
@@ -705,7 +721,10 @@ void MainWindow::onAddImageSequence()
 }
 
 void MainWindow::onRemoveSource() {
-  int row = (int)sources_.size() - 1;
+  int row = -1;
+  for (int i=(int)sources_.size()-1; i>=0; --i) {
+    if (sources_[i].mode_owner == (int)mode_) { row = i; break; }
+  }
   if (row < 0 || row >= (int)sources_.size()) return;
 
   timer_.stop();
@@ -725,16 +744,23 @@ void MainWindow::onRemoveSource() {
 
 void MainWindow::onModeCalibration() {
   mode_ = CALIB;
-  btnModeCalib_->setChecked(true);
-  btnModeTrack_->setChecked(false);
+  if (modeTabs_ && modeTabs_->currentIndex()!=0) modeTabs_->setCurrentIndex(0);
+  if (actionTabs_) actionTabs_->setCurrentIndex(0);
+  rebuildSourceViews();
   logLine("Switched to Calibration mode.");
 }
 
 void MainWindow::onModeTracking() {
   mode_ = TRACK;
-  btnModeTrack_->setChecked(true);
-  btnModeCalib_->setChecked(false);
+  if (modeTabs_ && modeTabs_->currentIndex()!=1) modeTabs_->setCurrentIndex(1);
+  if (actionTabs_) actionTabs_->setCurrentIndex(1);
+  rebuildSourceViews();
   logLine("Switched to Tracking mode.");
+}
+
+void MainWindow::onModeTabChanged(int idx) {
+  if (idx == 0) onModeCalibration();
+  else onModeTracking();
 }
 
 bool MainWindow::readFrames(std::vector<cv::Mat>& frames) {
@@ -928,6 +954,7 @@ QJsonObject MainWindow::toProjectJson() const {
     const auto& s = sources_[i];
     QJsonObject si;
     si["enabled"] = (i < (int)source_enabled_.size()) ? source_enabled_[i] : true;
+    si["mode_owner"] = s.mode_owner;
     if (s.is_cam) {
       si["type"] = "cam";
       si["cam_id"] = s.cam_id;
@@ -977,19 +1004,23 @@ bool MainWindow::fromProjectJson(const QJsonObject& o) {
       QJsonObject si = v.toObject();
       QString type = si["type"].toString();
       bool en = si["enabled"].toBool(true);
+      int owner = si["mode_owner"].toInt(0);
 
       InputSource s;
       if (type == "cam") {
         s.is_cam = true;
+        s.mode_owner = owner;
         s.cam_id = si["cam_id"].toInt(0);
         s.cap.open(s.cam_id);
       } else if (type == "video") {
         s.is_cam = false;
+        s.mode_owner = owner;
         s.is_image_seq = false;
         s.video_path = si["path"].toString();
         s.cap.open(s.video_path.toStdString());
       } else if (type == "imgseq") {
         s.is_cam = false;
+        s.mode_owner = owner;
         s.is_image_seq = true;
         s.seq_dir = si["dir"].toString();
         s.video_path = s.seq_dir;
@@ -1072,12 +1103,59 @@ void MainWindow::onResetFrames() {
 }
 
 void MainWindow::onCalibrateAndSave() {
-  // Need one frame to know sizes
-  std::vector<cv::Mat> frames;
-  if (!readFrames(frames)) return;
+  // Use all frames from the two Calibration-tab sources (no Grab required).
+  std::vector<int> idx;
+  {
+    QMutexLocker lock(&sources_mutex_);
+    for (int i=0;i<(int)sources_.size();++i) {
+      if (sources_[i].mode_owner == (int)CALIB && !sources_[i].is_cam) idx.push_back(i);
+    }
+  }
+  if (idx.size() != 2) {
+    QMessageBox::warning(this, "Calibration", "Calibration tab must have exactly 2 video/image-sequence sources.");
+    return;
+  }
+
+  stopCaptureBlocking();
+  calibrator_->reset();
+  {
+    QMutexLocker lock(&sources_mutex_);
+    for (int k : idx) {
+      if (k < 0 || k >= (int)sources_.size()) continue;
+      if (sources_[k].is_image_seq) sources_[k].seq_idx = 0;
+      else if (sources_[k].cap.isOpened()) sources_[k].cap.set(cv::CAP_PROP_POS_FRAMES, 0);
+    }
+  }
+
+  auto readNext = [](InputSource& s, cv::Mat& out)->bool {
+    if (s.is_image_seq) {
+      if (s.seq_files.isEmpty() || s.seq_idx >= s.seq_files.size()) return false;
+      out = cv::imread(s.seq_files[s.seq_idx].toStdString(), cv::IMREAD_COLOR);
+      s.seq_idx++;
+      return !out.empty();
+    }
+    if (!s.cap.isOpened()) return false;
+    return s.cap.read(out) && !out.empty();
+  };
 
   std::vector<cv::Size> sizes;
-  for (auto& f : frames) sizes.push_back(f.size());
+  bool sizesSet = false;
+  int usedPairs = 0;
+  while (true) {
+    cv::Mat a, b;
+    {
+      QMutexLocker lock(&sources_mutex_);
+      if (!readNext(sources_[idx[0]], a) || !readNext(sources_[idx[1]], b)) break;
+    }
+    std::vector<cv::Mat> pair = {a,b};
+    if (!sizesSet) { sizes = {a.size(), b.size()}; sizesSet = true; }
+    if (calibrator_->detectAndMaybeStore(pair, true)) usedPairs++;
+  }
+
+  if (usedPairs <= 0 || !sizesSet) {
+    QMessageBox::warning(this, "Calibration", "No valid chessboard pairs found across all frames.");
+    return;
+  }
 
   double rms=0.0;
   std::vector<CameraModel> out;
@@ -1252,7 +1330,7 @@ void MainWindow::onFramesFromWorker(FramePack frames, qint64 capture_ts_ms) {
   {
     QMutexLocker srcLock(&sources_mutex_);
     for (const auto& s : sources_) {
-      if (s.is_cam) continue;
+      if (s.is_cam || s.mode_owner!=(int)mode_) continue;
       if (s.is_image_seq) {
         framePos = std::max<int64_t>(0, s.seq_idx);
         if (frameEnd <= 0) frameEnd = (int64_t)s.seq_files.size();
@@ -1353,7 +1431,7 @@ void MainWindow::onToggleDocks(bool on) {
 
 int MainWindow::videoSourceCount() const {
   int c=0;
-  for (const auto& s : sources_) if (!s.is_cam) c++;
+  for (const auto& s : sources_) if (!s.is_cam && s.mode_owner==(int)mode_) c++;
   return c;
 }
 
@@ -1376,7 +1454,7 @@ void MainWindow::updatePlaybackParams() {
     bool found=false;
     QMutexLocker srcLock(&sources_mutex_);
     for (auto& s : sources_) {
-      if (s.is_cam) continue;
+      if (s.is_cam || s.mode_owner!=(int)mode_) continue;
       if (s.is_image_seq) {
         int64_t fc = (int64_t)s.seq_files.size();
         if (fc > 0) { minFrames = std::min(minFrames, fc); found = true; }
@@ -1402,7 +1480,7 @@ void MainWindow::updatePlaybackParams() {
     int64_t maxFrames = 0;
     QMutexLocker srcLock(&sources_mutex_);
     for (const auto& s : sources_) {
-      if (s.is_cam) continue;
+      if (s.is_cam || s.mode_owner!=(int)mode_) continue;
       if (s.is_image_seq) {
         maxFrames = std::max<int64_t>(maxFrames, (int64_t)s.seq_files.size());
         continue;
@@ -1441,7 +1519,7 @@ void MainWindow::stepAllVideos(int delta) {
     steppedFrames.resize(sources_.size());
     for (int i=0;i<(int)sources_.size();++i) {
       auto& src = sources_[i];
-      if (src.is_cam) continue;
+      if (src.is_cam || src.mode_owner!=(int)mode_) continue;
       cv::Mat f;
       int64_t target = 0;
       if (src.is_image_seq) {
@@ -1517,7 +1595,7 @@ void MainWindow::onProgressSliderReleased() {
   {
     QMutexLocker srcLock(&sources_mutex_);
     for (auto& src : sources_) {
-      if (src.is_cam) continue;
+      if (src.is_cam || src.mode_owner!=(int)mode_) continue;
       if (src.is_image_seq) {
         if (!src.seq_files.isEmpty()) src.seq_idx = std::max(0, std::min(target, (int)src.seq_files.size()-1));
         continue;
@@ -1543,11 +1621,11 @@ void MainWindow::onPlayAll() {
   {
     QMutexLocker srcLock(&sources_mutex_);
     // Enable all video sources for playback
-    for (int i=0;i<(int)sources_.size();++i) if (!sources_[i].is_cam) source_enabled_[i]=true;
+    for (int i=0;i<(int)sources_.size();++i) if (!sources_[i].is_cam && sources_[i].mode_owner==(int)mode_) source_enabled_[i]=true;
 
     // Rewind all videos to frame 0 for perfect sync
     for (auto& s : sources_) {
-      if (s.is_cam) continue;
+      if (s.is_cam || s.mode_owner!=(int)mode_) continue;
       if (s.is_image_seq) { s.seq_idx = 0; continue; }
       if (s.cap.isOpened()) {
         s.cap.set(cv::CAP_PROP_POS_FRAMES, 0);

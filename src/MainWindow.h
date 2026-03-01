@@ -45,6 +45,7 @@ struct InputSource {
   QString seq_dir;
   QStringList seq_files;
   int seq_idx=0;
+  int mode_owner=0; // 0=Calibration tab, 1=Tracking tab
   cv::VideoCapture cap;
 };
 
@@ -136,6 +137,7 @@ private slots:
   // UI mode
   void onModeCalibration();
   void onModeTracking();
+  void onModeTabChanged(int idx);
 
 private:
   void buildUI();
@@ -148,6 +150,7 @@ private:
   void updateSourceDocks(const std::vector<cv::Mat>& frames);
   void rebuildSourceViews();
   void updateSourceViews(const std::vector<cv::Mat>& frames);
+  std::vector<int> activeSourceIndices() const;
   void stopCaptureBlocking();
   void updatePlaybackParams();
   void stepAllVideos(int delta);
@@ -205,9 +208,11 @@ private:
   enum Mode { CALIB=0, TRACK=1 } mode_=CALIB;
 
   // UI widgets
+  QTabWidget* modeTabs_=nullptr;
   QWidget* viewsHost_=nullptr;
   QGridLayout* viewsGrid_=nullptr;
   std::vector<ImageViewer*> sourceViews_;
+  std::vector<int> active_view_source_indices_;
   QTextEdit* log_=nullptr;
 
   // Per-source dock views
@@ -252,6 +257,7 @@ private:
 
   QPushButton* btnModeCalib_=nullptr;
   QPushButton* btnModeTrack_=nullptr;
+  QTabWidget* actionTabs_=nullptr;
 
   // Calibration tab
   QSpinBox* spBoardW_=nullptr;
