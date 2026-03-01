@@ -683,6 +683,8 @@ void MainWindow::rebuildSourceViews() {
 
     QWidget* topBar = new QWidget(canvas);
     topBar->setAttribute(Qt::WA_StyledBackground, false);
+    topBar->setStyleSheet("background: transparent; border: none;");
+    topBar->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
     QHBoxLayout* tb = new QHBoxLayout(topBar);
     tb->setContentsMargins(6,0,6,6);
     tb->setSpacing(2);
@@ -731,6 +733,9 @@ void MainWindow::rebuildSourceViews() {
 
     overlay->addWidget(v, 0, 0);
     overlay->addWidget(topBar, 0, 0, Qt::AlignBottom | Qt::AlignLeft);
+    overlay->setRowStretch(0, 1);
+    overlay->setColumnStretch(0, 1);
+    topBar->raise();
     pv->addWidget(canvas, 1);
 
     sourceViews_.push_back(v);
