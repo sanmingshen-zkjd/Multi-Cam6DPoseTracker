@@ -814,10 +814,14 @@ void MainWindow::onTick() {
     }
   }
     // Heavy overlay (chessboard / tag detection) throttled to keep UI responsive
-  ui_frame_skip_ = (ui_frame_skip_ + 1) % ui_overlay_div_;
-  if (ui_frame_skip_ == 0) {
-    if (mode_==CALIB) overlayCalibration(vis, frames);
-    else overlayTracking(vis, frames);
+  // Heavy overlay (AprilTag/chessboard detection) can block UI and cause stutter.
+  // During active playback, render raw frames for smoothness; run overlay mainly when paused.
+  if (!playback_running_) {
+    ui_frame_skip_ = (ui_frame_skip_ + 1) % ui_overlay_div_;
+    if (ui_frame_skip_ == 0) {
+      if (mode_==CALIB) overlayCalibration(vis, frames);
+      else overlayTracking(vis, frames);
+    }
   }
 
   updateSourceViews(vis);

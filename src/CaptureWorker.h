@@ -92,12 +92,9 @@ private slots:
         }
 
         cv::Mat f;
-        if (!s.is_cam && sync_mode_) {
-          // Synchronized video playback: force all videos to the same frame index
-          s.cap.set(cv::CAP_PROP_POS_FRAMES, (double)cur_frame_);
-          s.cap.read(f);
-        } else {
-          s.cap.read(f);
+        if (!s.cap.read(f) && !s.is_cam && sync_mode_) {
+          // In sync mode we avoid per-frame random seeks (causes decode stalls/jitter).
+          // If read fails at end, fallback logic below keeps last good frame.
         }
 
         if (f.empty()) {
