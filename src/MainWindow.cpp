@@ -228,12 +228,12 @@ void MainWindow::buildUI() {
 
     QWidget* sideBar = new QWidget(central);
     sideBar->setObjectName("leftSidebar");
-    sideBar->setFixedWidth(190);
+    sideBar->setFixedWidth(128);
     QVBoxLayout* sv = new QVBoxLayout(sideBar);
     sv->setContentsMargins(12, 12, 12, 12);
     sv->setSpacing(10);
 
-    QLabel* appTitle = new QLabel("Multi-Cam\nToolkit", sideBar);
+    QLabel* appTitle = new QLabel("MCToolkit", sideBar);
     appTitle->setObjectName("sidebarTitle");
     appTitle->setWordWrap(true);
     appTitle->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
@@ -275,11 +275,11 @@ void MainWindow::buildUI() {
     root->addWidget(sideBar);
     sideBar->setStyleSheet(
       "#leftSidebar{background:#1f232b;border-right:1px solid #3a4250;}"
-      "#sidebarTitle{font-size:15px;font-weight:700;color:#f4f7fb;padding:6px 6px;line-height:1.25;}"
-      "QTabBar::tab{background:transparent;color:#c8d0da;padding:8px 10px;text-align:left;border-radius:6px;margin:2px 0;min-width:120px;}"
+      "#sidebarTitle{font-size:12px;font-weight:700;color:#f4f7fb;padding:4px 4px;line-height:1.1;}"
+      "QTabBar::tab{background:transparent;color:#c8d0da;padding:6px 6px;text-align:left;border-radius:6px;margin:2px 0;min-width:72px;}"
       "QTabBar::tab:selected{background:#3b82f6;color:white;font-weight:600;}"
       "QTabBar::tab:hover:!selected{background:#2a3140;color:#f0f4f8;}"
-      "QToolButton{background:#2b3340;border:1px solid #4b586d;border-radius:6px;padding:8px 10px;color:#eef2f8;text-align:left;}"
+      "QToolButton{background:#2b3340;border:1px solid #4b586d;border-radius:6px;padding:6px 6px;color:#eef2f8;text-align:left;}"
       "QToolButton::menu-indicator{subcontrol-position:right center;right:8px;}"
       "QFrame{color:#394150;background:#394150;}");
 
