@@ -427,22 +427,23 @@ void MainWindow::onAddVideo()
     timer_.stop();
     if (captureWorker_) 
         QMetaObject::invokeMethod(captureWorker_, "stop", Qt::BlockingQueuedConnection);
-    sources_.push_back(std::move(s));
-    num_cams_ = (int)sources_.size();
-    // Do NOT auto-play on import
-    if ((int)source_enabled_.size() < num_cams_) 
-        source_enabled_.resize(num_cams_, true);
-    source_enabled_[num_cams_-1] = false;
-    if ((int)last_frames_.size() < num_cams_) 
-        last_frames_.resize(num_cams_);
- 
     cv::Mat firstFrame;
     s.cap.read(firstFrame);
-        last_frames_[num_cams_ - 1] = firstFrame.clone();
+    if (!firstFrame.empty()) {
+      s.cap.set(cv::CAP_PROP_POS_FRAMES, 0);
+    }
 
-    source_enabled_.assign(std::max(0,num_cams_), true);
-    // last_frames_ will be populated by CaptureWorker when frames arrive.
-    last_frames_.resize(std::max(0,num_cams_));
+    sources_.push_back(std::move(s));
+    num_cams_ = (int)sources_.size();
+
+    if ((int)source_enabled_.size() < num_cams_)
+        source_enabled_.resize(num_cams_, true);
+    // Do NOT auto-play on import: newly added videos start paused.
+    source_enabled_[num_cams_-1] = false;
+
+    if ((int)last_frames_.size() < num_cams_)
+        last_frames_.resize(num_cams_);
+    last_frames_[num_cams_ - 1] = firstFrame.clone();
     calibrator_.reset(new MultiCamCalibrator(std::max(1,num_cams_), cv::Size(board_w_, board_h_), square_));
     refreshSourceList();
     if (show_docks_) rebuildSourceDocks();
@@ -459,9 +460,14 @@ void MainWindow::onRemoveSource() {
   if (sources_[row].cap.isOpened()) sources_[row].cap.release();
   sources_.erase(sources_.begin() + row);
   num_cams_ = (int)sources_.size();
-  source_enabled_.assign(std::max(0,num_cams_), true);
-  // last_frames_ will be populated by CaptureWorker when frames arrive.
-  last_frames_.resize(std::max(0,num_cams_));
+  if (row < (int)source_enabled_.size()) {
+    source_enabled_.erase(source_enabled_.begin() + row);
+  }
+  if (row < (int)last_frames_.size()) {
+    last_frames_.erase(last_frames_.begin() + row);
+  }
+  source_enabled_.resize(std::max(0, num_cams_), true);
+  last_frames_.resize(std::max(0, num_cams_));
 
   calibrator_.reset(new MultiCamCalibrator(std::max(1,num_cams_), cv::Size(board_w_, board_h_), square_));
   refreshSourceList();
