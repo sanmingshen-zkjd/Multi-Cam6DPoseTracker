@@ -23,6 +23,7 @@
 #include <QStyle>
 #include <QFrame>
 #include <QIntValidator>
+#include <functional>
 
 static QString nowStr() {
   return QDateTime::currentDateTime().toString("hh:mm:ss");
@@ -56,6 +57,52 @@ protected:
     }
     QSlider::mousePressEvent(event);
   }
+};
+
+class TitleBarWidget : public QWidget {
+public:
+  explicit TitleBarWidget(QWidget* parent=nullptr) : QWidget(parent) {}
+
+  std::function<void(const QPoint&)> onDragMove;
+  std::function<void()> onToggleMaxRestore;
+
+protected:
+  void mousePressEvent(QMouseEvent* event) override {
+    if (event->button() == Qt::LeftButton) {
+      dragging_ = true;
+      dragOffset_ = event->globalPos() - window()->frameGeometry().topLeft();
+      event->accept();
+      return;
+    }
+    QWidget::mousePressEvent(event);
+  }
+
+  void mouseMoveEvent(QMouseEvent* event) override {
+    if (dragging_ && (event->buttons() & Qt::LeftButton) && onDragMove) {
+      onDragMove(event->globalPos() - dragOffset_);
+      event->accept();
+      return;
+    }
+    QWidget::mouseMoveEvent(event);
+  }
+
+  void mouseReleaseEvent(QMouseEvent* event) override {
+    dragging_ = false;
+    QWidget::mouseReleaseEvent(event);
+  }
+
+  void mouseDoubleClickEvent(QMouseEvent* event) override {
+    if (event->button() == Qt::LeftButton && onToggleMaxRestore) {
+      onToggleMaxRestore();
+      event->accept();
+      return;
+    }
+    QWidget::mouseDoubleClickEvent(event);
+  }
+
+private:
+  bool dragging_ = false;
+  QPoint dragOffset_;
 };
 
 
@@ -193,6 +240,7 @@ MainWindow::MainWindow(const std::vector<InputSource>& sources,
     square_(square_m),
     settings_("YourCompany", "Multi6DTracker")
 {
+    setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
     setWindowTitle("Multi6DTracker");
     resize(1280, 800);
 
@@ -250,7 +298,59 @@ MainWindow::~MainWindow()
 void MainWindow::buildUI() {
     // Central view
     QWidget* central = new QWidget(this);
-    QHBoxLayout* root = new QHBoxLayout(central);
+    QVBoxLayout* outer = new QVBoxLayout(central);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+
+    TitleBarWidget* titleBar = new TitleBarWidget(central);
+    titleBar->setObjectName("customTitleBar");
+    titleBar->setFixedHeight(34);
+    QHBoxLayout* titleLayout = new QHBoxLayout(titleBar);
+    titleLayout->setContentsMargins(10, 0, 6, 0);
+    titleLayout->setSpacing(6);
+
+    QLabel* titleText = new QLabel("Multi6DTracker", titleBar);
+    titleText->setStyleSheet("color:#c7d2df;font-weight:600;");
+    titleLayout->addWidget(titleText);
+    titleLayout->addStretch(1);
+
+    auto makeTitleBtn = [titleBar](const QString& text, const QString& objName) {
+      QToolButton* b = new QToolButton(titleBar);
+      b->setObjectName(objName);
+      b->setText(text);
+      b->setFixedSize(36, 24);
+      return b;
+    };
+
+    QToolButton* btnMin = makeTitleBtn("—", "titleMinBtn");
+    QToolButton* btnMax = makeTitleBtn("▢", "titleMaxBtn");
+    QToolButton* btnClose = makeTitleBtn("✕", "titleCloseBtn");
+    titleLayout->addWidget(btnMin);
+    titleLayout->addWidget(btnMax);
+    titleLayout->addWidget(btnClose);
+
+    titleBar->setStyleSheet(
+      "#customTitleBar{background:#1f232b;border-bottom:1px solid #3a4250;}"
+      "QToolButton{background:#2b3340;color:#cfd8e3;border:1px solid #4b586d;border-radius:4px;font-size:12px;}"
+      "QToolButton:hover{background:#374255;}"
+      "QToolButton#titleCloseBtn:hover{background:#b42318;color:#ffffff;border-color:#c24133;}");
+
+    connect(btnMin, &QToolButton::clicked, this, &QWidget::showMinimized);
+    connect(btnClose, &QToolButton::clicked, this, &QWidget::close);
+    connect(btnMax, &QToolButton::clicked, this, [this]() {
+      isMaximized() ? showNormal() : showMaximized();
+    });
+    titleBar->onToggleMaxRestore = [this]() {
+      isMaximized() ? showNormal() : showMaximized();
+    };
+    titleBar->onDragMove = [this](const QPoint& p) {
+      if (!isMaximized()) move(p);
+    };
+    outer->addWidget(titleBar);
+
+    QHBoxLayout* root = new QHBoxLayout();
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
 
     QWidget* sideBar = new QWidget(central);
     sideBar->setObjectName("leftSidebar");
@@ -402,6 +502,7 @@ void MainWindow::buildUI() {
     v->addLayout(playProgressRow);
 
     root->addWidget(mainPane, 1);
+    outer->addLayout(root, 1);
     setCentralWidget(central);
     menuBar()->hide();
 
