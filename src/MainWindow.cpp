@@ -322,9 +322,9 @@ void MainWindow::buildUI() {
       return b;
     };
 
-    QToolButton* btnMin = makeTitleBtn("—", "titleMinBtn");
-    QToolButton* btnMax = makeTitleBtn("▢", "titleMaxBtn");
-    QToolButton* btnClose = makeTitleBtn("✕", "titleCloseBtn");
+    QToolButton* btnMin = makeTitleBtn("-", "titleMinBtn");
+    QToolButton* btnMax = makeTitleBtn("[]", "titleMaxBtn");
+    QToolButton* btnClose = makeTitleBtn("X", "titleCloseBtn");
     titleLayout->addWidget(btnMin);
     titleLayout->addWidget(btnMax);
     titleLayout->addWidget(btnClose);
