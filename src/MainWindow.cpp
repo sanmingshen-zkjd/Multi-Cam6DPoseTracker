@@ -26,6 +26,7 @@
 #include <QIntValidator>
 #include <QPainter>
 #include <functional>
+#include <climits>
 
 static QString nowStr() {
   return QDateTime::currentDateTime().toString("hh:mm:ss");
@@ -675,8 +676,10 @@ void MainWindow::buildUI() {
     gbParams->setLayout(tg);
 
     lblFps_ = new QLabel("FPS: 0", tabTrk);
-    btnPrintPose_ = new QPushButton("Print Pose to Log", tabTrk);
+    btnDetectAll_ = new QPushButton("Detect All Frames", tabTrk);
     lblInliers_ = new QLabel("Inliers: 0", tabTrk);
+    lblPose_ = new QLabel("Pose: -", tabTrk);
+    lblPose_->setWordWrap(true);
 
     trkv->addWidget(btnLoadTag_);
     lblTagPath_ = new QLabel("TagMap: (none)", tabTrk);
@@ -686,10 +689,11 @@ void MainWindow::buildUI() {
     trkv->addWidget(lblYamlPath_);
     trkv->addWidget(gbParams);
     trkv->addWidget(chkPose_);
-    trkv->addWidget(btnPrintPose_);
+    trkv->addWidget(btnDetectAll_);
     btnExportTraj_ = new QPushButton("Export Trajectory CSV", tabTrk);
     trkv->addWidget(btnExportTraj_);
     trkv->addWidget(lblInliers_);
+    trkv->addWidget(lblPose_);
     lblTrajPlot_ = new QLabel(tabTrk);
     lblTrajPlot_->setMinimumHeight(180);
     lblTrajPlot_->setAlignment(Qt::AlignCenter);
@@ -703,7 +707,7 @@ void MainWindow::buildUI() {
     connect(btnLoadTag_, &QPushButton::clicked, this, &MainWindow::onLoadTagMap);
     connect(btnLoadYaml_, &QPushButton::clicked, this, &MainWindow::onLoadCalibYaml);
     connect(chkPose_, &QCheckBox::toggled, this, &MainWindow::onTogglePose);
-    connect(btnPrintPose_, &QPushButton::clicked, this, &MainWindow::onPrintPose);
+    connect(btnDetectAll_, &QPushButton::clicked, this, &MainWindow::onDetectAllTrackingFrames);
     connect(btnExportTraj_, &QPushButton::clicked, this, &MainWindow::onExportTrajectory);
     connect(spRansacIters_, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int v){ ransac_iters_=v; if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, pose_on_); });
     connect(spInlierThresh_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double v){ inlier_thresh_px_=v; if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, pose_on_); });
@@ -1386,10 +1390,8 @@ void MainWindow::onTick() {
       //logLine(QString(\"Sources changed -> rebuild calibrator (num=%1)\").arg(num_cams_));
     }
   }
-  // Show tag detections in Tracking mode when pose estimation is enabled.
-  if (mode_ == TRACK && pose_on_) {
-    overlayTracking(vis, frames);
-  }
+  // Tracking overlay is triggered by the explicit Detect button to avoid
+  // repeatedly accumulating visual detections on static frames.
 
   updateSourceViews(vis);
 
@@ -1867,16 +1869,95 @@ void MainWindow::onTogglePose(bool on) {
   logLine(QString("Pose estimation %1").arg(on ? "ON" : "OFF"));
 }
 
-void MainWindow::onPrintPose() {
-  Eigen::AngleAxisd aa(R_wr_);
-  QString s = QString("POSE t=[%1,%2,%3] ang=%4 axis=[%5,%6,%7] inliers=%8")
-    .arg(t_wr_.x(),0,'f',6).arg(t_wr_.y(),0,'f',6).arg(t_wr_.z(),0,'f',6)
-    .arg(aa.angle(),0,'f',6)
-    .arg(aa.axis().x(),0,'f',6).arg(aa.axis().y(),0,'f',6).arg(aa.axis().z(),0,'f',6)
-    .arg(last_inliers_);
-  logLine(s);
-}
+void MainWindow::onDetectAllTrackingFrames() {
+  if (mode_ != TRACK) {
+    QMessageBox::information(this, "Tracking", "Switch to Tracking mode first.");
+    return;
+  }
+  if (!tagmap_loaded_) {
+    QMessageBox::warning(this, "Tracking", "Load Tag Map first.");
+    return;
+  }
 
+  std::vector<int> idx;
+  {
+    QMutexLocker lock(&sources_mutex_);
+    for (int i = 0; i < (int)sources_.size(); ++i) {
+      if (sources_[i].mode_owner == (int)TRACK && !sources_[i].is_cam) idx.push_back(i);
+    }
+  }
+  if (idx.empty()) {
+    QMessageBox::warning(this, "Tracking", "No video/image-sequence sources found in Tracking mode.");
+    return;
+  }
+
+  stopCaptureBlocking();
+
+  int totalFrames = 0;
+  {
+    QMutexLocker lock(&sources_mutex_);
+    auto frameCount = [&](const InputSource& s)->int {
+      if (s.is_image_seq) return s.seq_files.size();
+      if (!s.cap.isOpened()) return 0;
+      return std::max(0, (int)s.cap.get(cv::CAP_PROP_FRAME_COUNT));
+    };
+    totalFrames = INT_MAX;
+    for (int k : idx) {
+      if (sources_[k].is_image_seq) sources_[k].seq_idx = 0;
+      else if (sources_[k].cap.isOpened()) sources_[k].cap.set(cv::CAP_PROP_POS_FRAMES, 0);
+      int c = frameCount(sources_[k]);
+      if (c > 0) totalFrames = std::min(totalFrames, c);
+    }
+    if (totalFrames == INT_MAX) totalFrames = 0;
+  }
+
+  if (calibProgressBar_) {
+    calibProgressBar_->setRange(0, totalFrames > 0 ? totalFrames : 0);
+    calibProgressBar_->setValue(0);
+  }
+  if (lblCalibProgress_) lblCalibProgress_->setText("Progress: tracking detect...");
+
+  auto readNext = [](InputSource& s, cv::Mat& out)->bool {
+    if (s.is_image_seq) {
+      if (s.seq_files.isEmpty() || s.seq_idx >= s.seq_files.size()) return false;
+      out = cv::imread(s.seq_files[s.seq_idx].toStdString(), cv::IMREAD_COLOR);
+      s.seq_idx++;
+      return !out.empty();
+    }
+    if (!s.cap.isOpened()) return false;
+    return s.cap.read(out) && !out.empty();
+  };
+
+  int processed = 0;
+  while (true) {
+    std::vector<cv::Mat> frames(idx.size());
+    {
+      QMutexLocker lock(&sources_mutex_);
+      bool ok = true;
+      for (int i = 0; i < (int)idx.size(); ++i) {
+        if (!readNext(sources_[idx[i]], frames[i])) { ok = false; break; }
+      }
+      if (!ok) break;
+    }
+
+    std::vector<cv::Mat> vis = frames;
+    overlayTracking(vis, frames);
+
+    {
+      QMutexLocker frameLock(&frames_mutex_);
+      if ((int)last_frames_.size() < (int)sources_.size()) last_frames_.resize(sources_.size());
+      for (int i = 0; i < (int)idx.size(); ++i) last_frames_[idx[i]] = vis[i];
+      updateSourceViews(last_frames_);
+    }
+
+    processed++;
+    if (calibProgressBar_) calibProgressBar_->setValue(processed);
+    if (lblCalibProgress_) lblCalibProgress_->setText(QString("Progress: tracking detect %1 / %2").arg(processed).arg(std::max(processed, totalFrames)));
+    QApplication::processEvents();
+  }
+
+  logLine(QString("Detect All finished. processed=%1").arg(processed));
+}
 
 // ----------------- Sources: pause/resume -----------------
 void MainWindow::onPauseResumeSelected() {
@@ -2071,6 +2152,16 @@ void MainWindow::onPoseFromWorker(const PoseResult& r) {
   }
   if (lblLatency_) lblLatency_->setText(QString("Latency: %1 ms (obs=%2)")
                                        .arg(r.latency_ms,0,'f',1).arg(r.obs_count));
+  if (lblPose_) {
+    if (r.ok) {
+      lblPose_->setText(QString("Pose t=[%1, %2, %3], aa=[%4, %5, %6], inliers=%7")
+                        .arg(r.t[0],0,'f',4).arg(r.t[1],0,'f',4).arg(r.t[2],0,'f',4)
+                        .arg(r.aa[0],0,'f',4).arg(r.aa[1],0,'f',4).arg(r.aa[2],0,'f',4)
+                        .arg(r.inliers));
+    } else {
+      lblPose_->setText("Pose: no valid solution");
+    }
+  }
   refreshTrajectoryPlot();
 }
 

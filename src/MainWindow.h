@@ -135,7 +135,7 @@ private slots:
   void onLoadTagMap();
   void onLoadCalibYaml();
   void onTogglePose(bool on);
-  void onPrintPose();
+  void onDetectAllTrackingFrames();
   void onExportTrajectory();
   void onSaveProject();
   void onLoadProject();
@@ -300,7 +300,8 @@ private:
   QLabel* lblTagPath_=nullptr;
   QLabel* lblYamlPath_=nullptr;
   QCheckBox* chkPose_=nullptr;
-  QPushButton* btnPrintPose_=nullptr;
+  QPushButton* btnDetectAll_=nullptr;
+  QLabel* lblPose_=nullptr;
   QLabel* lblInliers_=nullptr;
   QLabel* lblTrajPlot_=nullptr;
 
