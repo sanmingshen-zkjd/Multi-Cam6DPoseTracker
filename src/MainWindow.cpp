@@ -201,7 +201,6 @@ void ImageViewer::mousePressEvent(QMouseEvent* e) {
       lineDrawing_ = true;
       lineStart_ = p;
       previewLine_ = scene_.addLine(QLineF(lineStart_, lineStart_), QPen(QColor(80,220,255), 2));
-      emit linePreviewText("Line: start");
     } else {
       scene_.addLine(QLineF(lineStart_, p), QPen(QColor(80,220,255), 2));
       if (previewLine_) {

@@ -60,7 +60,6 @@ class CaptureWorker;
 class SolveWorker;
 
 class ImageViewer : public QGraphicsView {
-  Q_OBJECT
 public:
   enum ToolMode { PanTool=0, PointTool=1, LineTool=2 };
   explicit ImageViewer(QWidget* parent=nullptr);
@@ -70,9 +69,6 @@ public:
   void zoomOut();
   void resetView();
   void clearAnnotations();
-
-signals:
-  void linePreviewText(const QString& text);
 
 protected:
   void wheelEvent(QWheelEvent* e) override;
@@ -93,7 +89,6 @@ private:
 };
 
 class MainWindow : public QMainWindow {
-  Q_OBJECT
 public:
   MainWindow(const std::vector<InputSource>& sources,
              int board_w, int board_h, double square_m,
