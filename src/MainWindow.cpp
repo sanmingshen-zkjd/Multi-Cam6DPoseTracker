@@ -530,9 +530,11 @@ void MainWindow::buildUI() {
     connect(actLoadProject_, &QAction::triggered, this, &MainWindow::onLoadProject);
     connect(sideModeTabs_, &QTabBar::currentChanged, this, &MainWindow::onModeTabChanged);
 
-    // Right dock: actions + log
-    QDockWidget* dock = new QDockWidget("Actions", this);
-    dock->setAllowedAreas(Qt::RightDockWidgetArea | Qt::LeftDockWidgetArea);
+    // Right actions panel (embedded in central layout to keep top bar full-width)
+    QWidget* dock = new QWidget(central);
+    dock->setObjectName("actionsPanel");
+    dock->setMinimumWidth(320);
+    dock->setMaximumWidth(420);
 
     QWidget* dockw = new QWidget(dock);
     QVBoxLayout* dv = new QVBoxLayout(dockw);
@@ -711,8 +713,13 @@ void MainWindow::buildUI() {
     dv->addWidget(log_);
 
     dockw->setLayout(dv);
-    dock->setWidget(dockw);
-    addDockWidget(Qt::RightDockWidgetArea, dock);
+    QVBoxLayout* panelLayout = new QVBoxLayout(dock);
+    panelLayout->setContentsMargins(0,0,0,0);
+    panelLayout->addWidget(dockw);
+    dock->setLayout(panelLayout);
+    dock->setStyleSheet("#actionsPanel{background:#222831;border-left:1px solid #3a4250;}");
+
+    root->addWidget(dock);
 
     lblResolution_ = new QLabel("Resolution: -", this);
     statusBar()->addPermanentWidget(lblResolution_);
