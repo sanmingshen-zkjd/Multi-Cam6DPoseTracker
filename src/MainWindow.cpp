@@ -1929,6 +1929,9 @@ void MainWindow::onDetectAllTrackingFrames() {
   };
 
   int processed = 0;
+  int framesWithDetections = 0;
+  int poseOkCount = 0;
+
   while (true) {
     std::vector<cv::Mat> frames(idx.size());
     {
@@ -1941,22 +1944,64 @@ void MainWindow::onDetectAllTrackingFrames() {
     }
 
     std::vector<cv::Mat> vis = frames;
-    overlayTracking(vis, frames);
+    AprilTagDetections det;
+    std::vector<Observation> obs;
+    buildObservationsFromFrames(frames, tag_corner_map_, obs, &det, tag_dict_id_);
 
+    bool hasDet = false;
+    for (int i = 0; i < (int)vis.size(); ++i) {
+      if (i < (int)det.ids_per_cam.size() && !det.ids_per_cam[i].empty()) hasDet = true;
+      if (i < (int)det.ids_per_cam.size()) {
+        cv::aruco::drawDetectedMarkers(vis[i], det.corners_per_cam[i], det.ids_per_cam[i]);
+      }
+      cv::putText(vis[i], "cam" + std::to_string(i), cv::Point(15,30),
+                  cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0,255,0), 2, cv::LINE_AA);
+    }
+    if (hasDet) framesWithDetections++;
+
+    if (pose_on_ && (int)cams_.size() == (int)frames.size() && obs.size() >= 3) {
+      auto res = estimatePoseRansac(cams_, obs, R_wr_, t_wr_, ransac_iters_, inlier_thresh_px_);
+      if (res.ok) {
+        R_wr_ = res.R_wr;
+        t_wr_ = res.t_wr;
+        Eigen::AngleAxisd aa(res.R_wr);
+        Eigen::Vector3d aavec = aa.axis() * aa.angle();
+        last_inliers_ = (int)res.inliers.size();
+        traj_.push_back(TrajRow{QDateTime::currentMSecsSinceEpoch(), t_wr_, aavec, last_inliers_});
+        poseOkCount++;
+        if (lblPose_) {
+          lblPose_->setText(QString("Pose t=[%1, %2, %3], aa=[%4, %5, %6], inliers=%7")
+                            .arg(t_wr_.x(),0,'f',4).arg(t_wr_.y(),0,'f',4).arg(t_wr_.z(),0,'f',4)
+                            .arg(aavec.x(),0,'f',4).arg(aavec.y(),0,'f',4).arg(aavec.z(),0,'f',4)
+                            .arg(last_inliers_));
+        }
+      }
+    }
+
+    std::vector<cv::Mat> uiFrames;
     {
       QMutexLocker frameLock(&frames_mutex_);
       if ((int)last_frames_.size() < (int)sources_.size()) last_frames_.resize(sources_.size());
       for (int i = 0; i < (int)idx.size(); ++i) last_frames_[idx[i]] = vis[i];
-      updateSourceViews(last_frames_);
+      uiFrames = last_frames_;
     }
+    updateSourceViews(uiFrames);
+    refreshTrajectoryPlot();
 
     processed++;
     if (calibProgressBar_) calibProgressBar_->setValue(processed);
-    if (lblCalibProgress_) lblCalibProgress_->setText(QString("Progress: tracking detect %1 / %2").arg(processed).arg(std::max(processed, totalFrames)));
+    if (lblCalibProgress_) {
+      lblCalibProgress_->setText(QString("Progress: tracking detect %1 / %2 | det=%3 | pose=%4")
+                                 .arg(processed)
+                                 .arg(std::max(processed, totalFrames))
+                                 .arg(framesWithDetections)
+                                 .arg(poseOkCount));
+    }
     QApplication::processEvents();
   }
 
-  logLine(QString("Detect All finished. processed=%1").arg(processed));
+  logLine(QString("Detect All finished. processed=%1 detFrames=%2 poseOK=%3")
+          .arg(processed).arg(framesWithDetections).arg(poseOkCount));
 }
 
 // ----------------- Sources: pause/resume -----------------
