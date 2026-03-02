@@ -1379,23 +1379,10 @@ void MainWindow::onTick() {
       //logLine(QString(\"Sources changed -> rebuild calibrator (num=%1)\").arg(num_cams_));
     }
   }
-    // Heavy overlay (chessboard / tag detection) throttled to keep UI responsive
-  // Heavy overlay (AprilTag/chessboard detection) can block UI and cause stutter.
-  // NOTE: playback_running_ is only true for the sync Play button path, but sources may
-  // still be actively reading via Pause/Resume flow. Detect active sources directly.
-  //bool anySourceRunning = false;
-  //{
-  //  QMutexLocker lock(&sources_mutex_);
-  //  for (bool en : source_enabled_) {
-  //    if (en) { anySourceRunning = true; break; }
-  //  }
-  //}
-  //const int overlayDiv = anySourceRunning ? std::max(ui_overlay_div_, 12) : ui_overlay_div_;
-  //ui_frame_skip_ = (ui_frame_skip_ + 1) % overlayDiv;
-  //if (ui_frame_skip_ == 0) {
-  //  if (mode_==CALIB) overlayCalibration(vis, frames);
-  //  else overlayTracking(vis, frames);
-  //}
+  // Show tag detections in Tracking mode when pose estimation is enabled.
+  if (mode_ == TRACK && pose_on_) {
+    overlayTracking(vis, frames);
+  }
 
   updateSourceViews(vis);
 
