@@ -32,6 +32,32 @@ static QStringList kImageNameFilters() {
   return {"*.png", "*.jpg", "*.jpeg", "*.bmp", "*.tif", "*.tiff"};
 }
 
+class ClickJumpSlider : public QSlider {
+public:
+  explicit ClickJumpSlider(Qt::Orientation orientation, QWidget* parent=nullptr)
+      : QSlider(orientation, parent) {}
+
+protected:
+  void mousePressEvent(QMouseEvent* event) override {
+    if (event->button() == Qt::LeftButton) {
+      const int minV = minimum();
+      const int maxV = maximum();
+      int next = minV;
+      if (orientation() == Qt::Horizontal) {
+        const int w = width();
+        if (w > 1) next = QStyle::sliderValueFromPosition(minV, maxV, event->pos().x(), w - 1);
+      } else {
+        const int h = height();
+        if (h > 1) next = QStyle::sliderValueFromPosition(minV, maxV, h - 1 - event->pos().y(), h - 1);
+      }
+      setValue(next);
+      event->accept();
+      return;
+    }
+    QSlider::mousePressEvent(event);
+  }
+};
+
 
 ImageViewer::ImageViewer(QWidget* parent) : QGraphicsView(parent) {
   setScene(&scene_);
@@ -361,7 +387,7 @@ void MainWindow::buildUI() {
     playProgressRow->addWidget(btnStepPrev_);
     playProgressRow->addWidget(btnStepNext_);
     playProgressRow->addSpacing(10);
-    progressSlider_ = new QSlider(Qt::Horizontal, central);
+    progressSlider_ = new ClickJumpSlider(Qt::Horizontal, central);
     progressSlider_->setRange(0, 0);
     progressSlider_->setSingleStep(1);
     progressSlider_->setPageStep(30);
@@ -388,6 +414,10 @@ void MainWindow::buildUI() {
     connect(btnStepPrev_, &QToolButton::clicked, this, &MainWindow::onStepPrevFrame);
     connect(btnStepNext_, &QToolButton::clicked, this, &MainWindow::onStepNextFrame);
     connect(progressSlider_, &QSlider::sliderReleased, this, &MainWindow::onProgressSliderReleased);
+    connect(progressSlider_, &QSlider::valueChanged, this, [this](int) {
+      if (!progressSlider_ || progressSlider_->isSliderDown()) return;
+      onProgressSliderReleased();
+    });
     connect(editCurFrame_, &QLineEdit::returnPressed, this, &MainWindow::onFrameJumpReturnPressed);
     QMenu* fileMenu = new QMenu(btnFileMenu_);
     QAction* actAbout = fileMenu->addAction("Software Info");
@@ -990,15 +1020,18 @@ void MainWindow::onAddImageSequence()
 }
 
 void MainWindow::onRemoveSource() {
-  int row = -1;
-  for (int i=(int)sources_.size()-1; i>=0; --i) {
-    if (sources_[i].mode_owner == (int)mode_) { row = i; break; }
-  }
-  if (row < 0 || row >= (int)sources_.size()) return;
-
+  int removed = 0;
   timer_.stop();
-  if (sources_[row].cap.isOpened()) sources_[row].cap.release();
-  sources_.erase(sources_.begin() + row);
+  if (captureWorker_) QMetaObject::invokeMethod(captureWorker_, "stop", Qt::BlockingQueuedConnection);
+
+  for (int i=(int)sources_.size()-1; i>=0; --i) {
+    if (sources_[i].mode_owner != (int)mode_) continue;
+    if (sources_[i].cap.isOpened()) sources_[i].cap.release();
+    sources_.erase(sources_.begin() + i);
+    ++removed;
+  }
+  if (removed <= 0) return;
+
   num_cams_ = (int)sources_.size();
   source_enabled_.assign(std::max(0,num_cams_), true);
   // last_frames_ will be populated by CaptureWorker when frames arrive.
@@ -1008,7 +1041,9 @@ void MainWindow::onRemoveSource() {
   refreshSourceList();
   if (show_docks_) rebuildSourceDocks();
   rebuildSourceViews();
-  logLine("Removed source.");
+  updateSourceViews(last_frames_);
+  updateStatus();
+  logLine(QString("Removed %1 source(s) in current mode.").arg(removed));
 }
 
 void MainWindow::onModeCalibration() {
