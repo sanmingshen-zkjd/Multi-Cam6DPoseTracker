@@ -1635,6 +1635,7 @@ void MainWindow::onComputeCalibration() {
     totalFrames = (c0 > 0 && c1 > 0) ? std::min(c0, c1) : 0;
   }
   if (calibProgressBar_ && totalFrames > 0) calibProgressBar_->setRange(0, totalFrames);
+  if (totalFrames > 0) calib_pairs_.reserve(totalFrames);
 
   auto readNext = [](InputSource& s, cv::Mat& out)->bool {
     if (s.is_image_seq) {
@@ -1648,7 +1649,7 @@ void MainWindow::onComputeCalibration() {
   };
 
   int frameId = 0;
-  MultiCamCalibrator previewCalib(2, cv::Size(board_w_, board_h_), square_);
+  const int uiUpdateStride = 10;
   while (true) {
     cv::Mat a, b;
     {
@@ -1661,31 +1662,36 @@ void MainWindow::onComputeCalibration() {
     p.right = b;
     calib_pairs_.push_back(std::move(p));
 
-    // Preview current frame and chessboard detection on the left viewer while scanning.
-    std::vector<cv::Mat> pair = {a, b};
-    std::vector<std::vector<cv::Point2f>> corners;
-    std::vector<bool> ok;
-    previewCalib.detectAndMaybeStore(pair, false, &corners, &ok);
-    cv::Mat visA = a.clone();
-    cv::Mat visB = b.clone();
-    if (!corners.empty() && corners.size() >= 2) {
-      cv::drawChessboardCorners(visA, cv::Size(board_w_, board_h_), corners[0], !ok.empty() && ok[0]);
-      cv::drawChessboardCorners(visB, cv::Size(board_w_, board_h_), corners[1], ok.size() > 1 && ok[1]);
-    }
-    {
-      QMutexLocker frameLock(&frames_mutex_);
-      if (idx[0] >= 0 && idx[0] < (int)last_frames_.size()) last_frames_[idx[0]] = visA;
-      if (idx[1] >= 0 && idx[1] < (int)last_frames_.size()) last_frames_[idx[1]] = visB;
-      updateSourceViews(last_frames_);
-    }
-
     frameId++;
 
     if (calibProgressBar_ && totalFrames > 0) calibProgressBar_->setValue(std::min(frameId, totalFrames));
     play_frame_ = std::max<int64_t>(0, frameId - 1);
     updateProgressUI(play_frame_, std::max<int64_t>(1, totalFrames));
     if (lblCalibProgress_) lblCalibProgress_->setText(QString("Progress: scanning %1 / %2").arg(frameId).arg(std::max(totalFrames, frameId)));
-    QApplication::processEvents();
+
+    if (frameId % uiUpdateStride == 0) {
+      std::vector<cv::Mat> uiFrames;
+      {
+        QMutexLocker frameLock(&frames_mutex_);
+        if (idx[0] >= 0 && idx[0] < (int)last_frames_.size()) last_frames_[idx[0]] = a;
+        if (idx[1] >= 0 && idx[1] < (int)last_frames_.size()) last_frames_[idx[1]] = b;
+        uiFrames = last_frames_;
+      }
+      updateSourceViews(uiFrames);
+      QApplication::processEvents();
+    }
+  }
+
+  if (!calib_pairs_.empty()) {
+    const auto& lastPair = calib_pairs_.back();
+    std::vector<cv::Mat> uiFrames;
+    {
+      QMutexLocker frameLock(&frames_mutex_);
+      if (idx[0] >= 0 && idx[0] < (int)last_frames_.size()) last_frames_[idx[0]] = lastPair.left;
+      if (idx[1] >= 0 && idx[1] < (int)last_frames_.size()) last_frames_[idx[1]] = lastPair.right;
+      uiFrames = last_frames_;
+    }
+    updateSourceViews(uiFrames);
   }
 
   if (calib_pairs_.empty()) {
