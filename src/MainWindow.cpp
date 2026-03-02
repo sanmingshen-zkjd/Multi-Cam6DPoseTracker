@@ -18,6 +18,7 @@
 #include <QFile>
 #include <QScrollArea>
 #include <QApplication>
+#include <QScreen>
 #include <QHeaderView>
 #include <QTabBar>
 #include <QStyle>
@@ -242,7 +243,11 @@ MainWindow::MainWindow(const std::vector<InputSource>& sources,
 {
     setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
     setWindowTitle("Multi6DTracker");
-    resize(1280, 800);
+    if (QScreen* screen = QGuiApplication::primaryScreen()) {
+      setGeometry(screen->availableGeometry());
+    } else {
+      resize(1280, 800);
+    }
 
     calibrator_.reset(new MultiCamCalibrator(std::max(1,num_cams_), cv::Size(board_w_, board_h_), square_));
 
