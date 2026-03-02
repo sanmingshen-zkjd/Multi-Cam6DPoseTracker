@@ -671,11 +671,6 @@ void MainWindow::rebuildSourceViews() {
   }
 
   int cols = (n <= 1) ? 1 : 2;
-  auto themedIcon = [this](const QString& name, QStyle::StandardPixmap sp) {
-    QIcon icon = QIcon::fromTheme(name);
-    if (icon.isNull()) icon = style()->standardIcon(sp);
-    return icon;
-  };
 
   for (int i=0; i<n; ++i) {
     QWidget* panel = new QWidget(viewsHost_);
@@ -684,42 +679,47 @@ void MainWindow::rebuildSourceViews() {
     pv->setContentsMargins(4,4,4,4);
     pv->setSpacing(4);
 
-    QToolButton* panBtn = new QToolButton(panel);
+    //QToolButton* panBtn = new QToolButton(panel);
     QToolButton* pointBtn = new QToolButton(panel);
     QToolButton* lineBtn = new QToolButton(panel);
     QToolButton* zoomInBtn = new QToolButton(panel);
     QToolButton* zoomOutBtn = new QToolButton(panel);
     QToolButton* resetBtn = new QToolButton(panel);
-    QToolButton* clearBtn = new QToolButton(panel);
+   // QToolButton* clearBtn = new QToolButton(panel);
 
-    panBtn->setIcon(themedIcon("transform-move", QStyle::SP_ArrowUp));
-    pointBtn->setIcon(themedIcon("draw-freehand", QStyle::SP_DialogYesButton));
-    lineBtn->setIcon(themedIcon("draw-line", QStyle::SP_LineEditClearButton));
-    zoomInBtn->setIcon(themedIcon("zoom-in", QStyle::SP_FileDialogDetailedView));
-    zoomOutBtn->setIcon(themedIcon("zoom-out", QStyle::SP_FileDialogListView));
-    resetBtn->setIcon(themedIcon("zoom-fit-best", QStyle::SP_BrowserReload));
-    clearBtn->setIcon(themedIcon("edit-clear", QStyle::SP_TrashIcon));
+    QSize btnIconSize(24, 24);
+    pointBtn->setIcon(QIcon(":/icons/Point.png"));
+    pointBtn->setIconSize(btnIconSize);
+    lineBtn->setIcon(QIcon(":/icons/Line.png"));
+    lineBtn->setIconSize(btnIconSize);
+    zoomInBtn->setIcon(QIcon(":/icons/Zoom-.png"));
+    zoomInBtn->setIconSize(btnIconSize);
+    zoomOutBtn->setIcon(QIcon(":/icons/Zoom+.png"));
+    zoomOutBtn->setIconSize(btnIconSize);
+    resetBtn->setIcon(QIcon(":/icons/Auto.png"));
+    resetBtn->setIconSize(btnIconSize);
 
-    panBtn->setCheckable(true);
+
+   // panBtn->setCheckable(true);
     pointBtn->setCheckable(true);
     lineBtn->setCheckable(true);
-    panBtn->setChecked(true);
+    //panBtn->setChecked(true);
 
-    panBtn->setText("Pan");
+    //panBtn->setText("Pan");
     pointBtn->setText("Point");
     lineBtn->setText("Line");
     zoomInBtn->setText("Zoom+");
     zoomOutBtn->setText("Zoom-");
     resetBtn->setText("Reset");
-    clearBtn->setText("Clear");
+   // clearBtn->setText("Clear");
 
-    panBtn->setToolTip("Pan view");
+   // panBtn->setToolTip("Pan view");
     pointBtn->setToolTip("Draw point");
     lineBtn->setToolTip("Draw line");
     zoomInBtn->setToolTip("Zoom in");
     zoomOutBtn->setToolTip("Zoom out");
     resetBtn->setToolTip("Reset view");
-    clearBtn->setToolTip("Clear drawings");
+   // clearBtn->setToolTip("Clear drawings");
 
     QWidget* canvas = new QWidget(panel);
     QGridLayout* overlay = new QGridLayout(canvas);
@@ -733,7 +733,7 @@ void MainWindow::rebuildSourceViews() {
     QHBoxLayout* tb = new QHBoxLayout(topBar);
     tb->setContentsMargins(6,0,6,6);
     tb->setSpacing(2);
-    for (QToolButton* b : {panBtn, pointBtn, lineBtn, zoomInBtn, zoomOutBtn, resetBtn, clearBtn}) {
+    for (QToolButton* b : {pointBtn, lineBtn, zoomInBtn, zoomOutBtn, resetBtn}) {
       b->setAutoRaise(true);
       b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
       tb->addWidget(b);
@@ -743,38 +743,38 @@ void MainWindow::rebuildSourceViews() {
     ImageViewer* v = new ImageViewer(canvas);
     v->setMinimumSize(480, 270);
     v->setToolMode(ImageViewer::PanTool);
-    connect(panBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
-      panBtn->setChecked(true); pointBtn->setChecked(false); lineBtn->setChecked(false);
-      v->setToolMode(ImageViewer::PanTool);
-    });
-    connect(pointBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
-      panBtn->setChecked(false); pointBtn->setChecked(true); lineBtn->setChecked(false);
+    //connect(panBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
+    //  panBtn->setChecked(true); pointBtn->setChecked(false); lineBtn->setChecked(false);
+    //  v->setToolMode(ImageViewer::PanTool);
+    //});
+    connect(pointBtn, &QToolButton::clicked, this, [v, pointBtn, lineBtn]() {
+      pointBtn->setChecked(true); lineBtn->setChecked(false);
       v->setToolMode(ImageViewer::PointTool);
     });
-    connect(lineBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
-      panBtn->setChecked(false); pointBtn->setChecked(false); lineBtn->setChecked(true);
+    connect(lineBtn, &QToolButton::clicked, this, [v, pointBtn, lineBtn]() {
+      pointBtn->setChecked(false); lineBtn->setChecked(true);
       v->setToolMode(ImageViewer::LineTool);
     });
-    connect(zoomInBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
-      panBtn->setChecked(true); pointBtn->setChecked(false); lineBtn->setChecked(false);
+    connect(zoomInBtn, &QToolButton::clicked, this, [v, pointBtn, lineBtn]() {
+      pointBtn->setChecked(false); lineBtn->setChecked(false);
       v->setToolMode(ImageViewer::PanTool);
       v->zoomIn();
     });
-    connect(zoomOutBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
-      panBtn->setChecked(true); pointBtn->setChecked(false); lineBtn->setChecked(false);
+    connect(zoomOutBtn, &QToolButton::clicked, this, [v, pointBtn, lineBtn]() {
+     pointBtn->setChecked(false); lineBtn->setChecked(false);
       v->setToolMode(ImageViewer::PanTool);
       v->zoomOut();
     });
-    connect(resetBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
-      panBtn->setChecked(true); pointBtn->setChecked(false); lineBtn->setChecked(false);
+    connect(resetBtn, &QToolButton::clicked, this, [v, pointBtn, lineBtn]() {
+      pointBtn->setChecked(false); lineBtn->setChecked(false);
       v->setToolMode(ImageViewer::PanTool);
       v->resetView();
     });
-    connect(clearBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
-      panBtn->setChecked(true); pointBtn->setChecked(false); lineBtn->setChecked(false);
-      v->setToolMode(ImageViewer::PanTool);
-      v->clearAnnotations();
-    });
+    //connect(clearBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
+    //  panBtn->setChecked(true); pointBtn->setChecked(false); lineBtn->setChecked(false);
+    //  v->setToolMode(ImageViewer::PanTool);
+    //  v->clearAnnotations();
+    //});
 
     overlay->addWidget(v, 0, 0);
     overlay->addWidget(topBar, 0, 0, Qt::AlignBottom | Qt::AlignLeft);
@@ -2055,15 +2055,20 @@ void MainWindow::stepAllVideos(int delta) {
   }
 
   if (stepped) {
+    std::vector<cv::Mat> uiFrames;
     {
       QMutexLocker frameLock(&frames_mutex_);
       if ((int)last_frames_.size() != (int)steppedFrames.size()) last_frames_.resize(steppedFrames.size());
       for (int i=0;i<(int)steppedFrames.size();++i) {
         if (!steppedFrames[i].empty()) last_frames_[i] = steppedFrames[i];
       }
+      uiFrames = last_frames_;
     }
     play_frame_ = progressFrame;
     updateProgressUI(play_frame_, play_end_frame_);
+    updateSourceViews(uiFrames);
+    if (show_docks_) updateSourceDocks(uiFrames);
+    updateStatus();
     logLine(QString("Step frame: %1").arg(delta > 0 ? "next" : "prev"));
   } else {
     logLine("Step frame ignored: no video source ready.");
