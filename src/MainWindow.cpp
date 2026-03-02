@@ -296,17 +296,12 @@ MainWindow::~MainWindow()
 }
 
 void MainWindow::buildUI() {
-    // Central view
-    QWidget* central = new QWidget(this);
-    QVBoxLayout* outer = new QVBoxLayout(central);
-    outer->setContentsMargins(0, 0, 0, 0);
-    outer->setSpacing(0);
-
-    TitleBarWidget* titleBar = new TitleBarWidget(central);
+    // Top title bar spans the full QMainWindow width (including dock area)
+    TitleBarWidget* titleBar = new TitleBarWidget(this);
     titleBar->setObjectName("customTitleBar");
     titleBar->setFixedHeight(34);
     QHBoxLayout* titleLayout = new QHBoxLayout(titleBar);
-    titleLayout->setContentsMargins(10, 0, 6, 0);
+    titleLayout->setContentsMargins(10, 0, 0, 0);
     titleLayout->setSpacing(6);
 
     QLabel* titleText = new QLabel("Multi6DTracker", titleBar);
@@ -318,7 +313,7 @@ void MainWindow::buildUI() {
       QToolButton* b = new QToolButton(titleBar);
       b->setObjectName(objName);
       b->setText(text);
-      b->setFixedSize(36, 24);
+      b->setFixedSize(46, 34);
       return b;
     };
 
@@ -331,9 +326,9 @@ void MainWindow::buildUI() {
 
     titleBar->setStyleSheet(
       "#customTitleBar{background:#1f232b;border-bottom:1px solid #3a4250;}"
-      "QToolButton{background:#2b3340;color:#cfd8e3;border:1px solid #4b586d;border-radius:4px;font-size:12px;}"
+      "QToolButton{background:#2b3340;color:#cfd8e3;border:none;border-left:1px solid #4b586d;border-radius:0;font-size:12px;}"
       "QToolButton:hover{background:#374255;}"
-      "QToolButton#titleCloseBtn:hover{background:#b42318;color:#ffffff;border-color:#c24133;}");
+      "QToolButton#titleCloseBtn:hover{background:#b42318;color:#ffffff;}");
 
     connect(btnMin, &QToolButton::clicked, this, &QWidget::showMinimized);
     connect(btnClose, &QToolButton::clicked, this, &QWidget::close);
@@ -346,8 +341,9 @@ void MainWindow::buildUI() {
     titleBar->onDragMove = [this](const QPoint& p) {
       if (!isMaximized()) move(p);
     };
-    outer->addWidget(titleBar);
+    setMenuWidget(titleBar);
 
+    QWidget* central = new QWidget(this);
     QHBoxLayout* root = new QHBoxLayout();
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
@@ -502,7 +498,7 @@ void MainWindow::buildUI() {
     v->addLayout(playProgressRow);
 
     root->addWidget(mainPane, 1);
-    outer->addLayout(root, 1);
+    central->setLayout(root);
     setCentralWidget(central);
     menuBar()->hide();
 
