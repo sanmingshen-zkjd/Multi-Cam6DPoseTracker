@@ -984,6 +984,7 @@ void MainWindow::rebuildCalibratorFromUI(bool reset) {
 
 // ---------------- Sources actions ----------------
 void MainWindow::onAddCamera() {
+  detect_overlay_cache_.clear();
   bool ok=false;
   int camId = QInputDialog::getInt(this, "Add Camera", "Camera index:", 0, 0, 64, 1, &ok);
   if (!ok) return;
@@ -1032,6 +1033,7 @@ void MainWindow::onAddCamera() {
 
 void MainWindow::onAddVideo() 
 {
+    detect_overlay_cache_.clear();
     QString last = settings_.value("lastVideoDir", "").toString();
     QString path = QFileDialog::getOpenFileName(this, "Add Video", last,"Video (*.mp4 *.avi *.mov *.mkv);;All (*.*)");
     if (path.isEmpty()) return;
@@ -1087,6 +1089,7 @@ void MainWindow::onAddVideo()
 
 void MainWindow::onAddImageSequence()
 {
+    detect_overlay_cache_.clear();
     QString last = settings_.value("lastImageSeqDir", "").toString();
     QString dir = QFileDialog::getExistingDirectory(this, "Add Image Sequence Folder", last);
     if (dir.isEmpty()) return;
@@ -1140,6 +1143,7 @@ void MainWindow::onAddImageSequence()
 }
 
 void MainWindow::onRemoveSource() {
+  detect_overlay_cache_.clear();
   int removed = 0;
   timer_.stop();
   if (captureWorker_) QMetaObject::invokeMethod(captureWorker_, "stop", Qt::BlockingQueuedConnection);
@@ -1615,6 +1619,7 @@ void MainWindow::onComputeCalibration() {
   if (lblCalibProgress_) lblCalibProgress_->setText("Progress: preparing...");
 
   stopCaptureBlocking();
+  detect_overlay_cache_.clear();
 
   int totalFrames = 0;
   {
@@ -1892,6 +1897,7 @@ void MainWindow::onDetectAllTrackingFrames() {
   }
 
   stopCaptureBlocking();
+  detect_overlay_cache_.clear();
 
   int totalFrames = 0;
   {
@@ -1976,6 +1982,10 @@ void MainWindow::onDetectAllTrackingFrames() {
                             .arg(last_inliers_));
         }
       }
+    }
+
+    for (int i = 0; i < (int)idx.size(); ++i) {
+      detect_overlay_cache_[idx[i]][processed] = vis[i];
     }
 
     std::vector<cv::Mat> uiFrames;
@@ -2384,6 +2394,15 @@ void MainWindow::stepAllVideos(int delta) {
         src.cap.read(f);
       }
       if (!f.empty()) {
+        // If Detect-All generated a visualized frame for this source/frame, reuse it
+        // so marker overlays remain persistent when stepping prev/next.
+        auto srcIt = detect_overlay_cache_.find(i);
+        if (srcIt != detect_overlay_cache_.end()) {
+          auto frameIt = srcIt->second.find(target);
+          if (frameIt != srcIt->second.end() && !frameIt->second.empty()) {
+            f = frameIt->second;
+          }
+        }
         steppedFrames[i] = f;
         progressFrame = target;
         stepped = true;

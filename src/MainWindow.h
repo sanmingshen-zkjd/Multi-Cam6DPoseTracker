@@ -333,6 +333,9 @@ private:
   std::vector<double> calib_pair_rmse_;
   bool has_computed_calib_ = false;
 
+  // Tracking detect-all overlay cache: source index -> frame index -> visualized frame
+  std::unordered_map<int, std::unordered_map<int64_t, cv::Mat>> detect_overlay_cache_;
+
   // Timer (UI refresh)
   QTimer timer_;
 };
