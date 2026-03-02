@@ -500,6 +500,7 @@ void MainWindow::buildUI() {
     root->addWidget(mainPane, 1);
     central->setLayout(root);
     setCentralWidget(central);
+    //menuBar()->hide();
 
     connect(btnAddCam_, &QToolButton::clicked, this, &MainWindow::onAddCamera);
     connect(btnAddVideo_, &QToolButton::clicked, this, &MainWindow::onAddVideo);
