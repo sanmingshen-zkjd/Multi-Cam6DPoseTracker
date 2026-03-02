@@ -191,9 +191,9 @@ MainWindow::MainWindow(const std::vector<InputSource>& sources,
     board_w_(board_w),
     board_h_(board_h),
     square_(square_m),
-    settings_("YourCompany", "MultiCamRigToolkit")
+    settings_("YourCompany", "Multi6DTracker")
 {
-    setWindowTitle("Multi-Camera Rig Toolkit (Qt)");
+    setWindowTitle("Multi6DTracker");
     resize(1280, 800);
 
     calibrator_.reset(new MultiCamCalibrator(std::max(1,num_cams_), cv::Size(board_w_, board_h_), square_));
@@ -259,7 +259,7 @@ void MainWindow::buildUI() {
     sv->setContentsMargins(6, 8, 6, 8);
     sv->setSpacing(10);
 
-    QLabel* appTitle = new QLabel("MCToolkit", sideBar);
+    QLabel* appTitle = new QLabel("Multi6DTracker", sideBar);
     appTitle->setObjectName("sidebarTitle");
     appTitle->setWordWrap(true);
     appTitle->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
@@ -304,7 +304,7 @@ void MainWindow::buildUI() {
     root->addWidget(sideBar);
     sideBar->setStyleSheet(
       "#leftSidebar{background:#1f232b;border-right:1px solid #4a5568;}"
-      "#sidebarTitle{font-size:12px;font-weight:700;color:#f4f7fb;padding:4px 4px;line-height:1.1;}"
+      "#sidebarTitle{font-size:11px;font-weight:600;color:#b8c4d6;padding:4px 4px;line-height:1.1;}"
       "QTabBar::tab{background:transparent;color:#c8d0da;padding:4px 4px;text-align:left;border-radius:6px;margin:2px 0;min-width:44px;}"
       "QTabBar::tab:selected{background:#3b82f6;color:white;font-weight:600;}"
       "QTabBar::tab:hover:!selected{background:#2a3140;color:#f0f4f8;}"
@@ -427,7 +427,7 @@ void MainWindow::buildUI() {
     btnFileMenu_->setMenu(fileMenu);
     connect(actAbout, &QAction::triggered, this, [this](){
       QMessageBox::information(this, "Software Info",
-                               "Multi-Cam6DPoseTracker\n\nCapture / Calibration / Tracking workflow.");
+                               "Multi6DTracker\n\nCapture / Calibration / Tracking workflow.");
     });
     connect(actSaveProject_, &QAction::triggered, this, &MainWindow::onSaveProject);
     connect(actLoadProject_, &QAction::triggered, this, &MainWindow::onLoadProject);
