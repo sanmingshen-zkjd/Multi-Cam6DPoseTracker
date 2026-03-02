@@ -24,6 +24,7 @@
 #include <QStyle>
 #include <QFrame>
 #include <QIntValidator>
+#include <QPainter>
 #include <functional>
 
 static QString nowStr() {
@@ -689,6 +690,11 @@ void MainWindow::buildUI() {
     btnExportTraj_ = new QPushButton("Export Trajectory CSV", tabTrk);
     trkv->addWidget(btnExportTraj_);
     trkv->addWidget(lblInliers_);
+    lblTrajPlot_ = new QLabel(tabTrk);
+    lblTrajPlot_->setMinimumHeight(180);
+    lblTrajPlot_->setAlignment(Qt::AlignCenter);
+    lblTrajPlot_->setStyleSheet("background:#1d232b;border:1px solid #3a4250;color:#9fb0c4;");
+    trkv->addWidget(lblTrajPlot_);
     lblLatency_ = new QLabel("Latency: 0 ms", tabTrk);
     trkv->addWidget(lblFps_);
     trkv->addWidget(lblLatency_);
@@ -729,6 +735,7 @@ void MainWindow::buildUI() {
     lblResolution_ = new QLabel("Resolution: -", this);
     statusBar()->addPermanentWidget(lblResolution_);
 
+    refreshTrajectoryPlot();
     onModeCapture();
     statusBar()->showMessage("Ready");
     refreshSourceList();
@@ -1990,6 +1997,68 @@ void MainWindow::onFramesFromWorker(FramePack frames, qint64 capture_ts_ms) {
   }
 }
 
+void MainWindow::refreshTrajectoryPlot() {
+  if (!lblTrajPlot_) return;
+
+  const int w = std::max(320, lblTrajPlot_->width());
+  const int h = std::max(180, lblTrajPlot_->height());
+  QPixmap pix(w, h);
+  pix.fill(QColor(29, 35, 43));
+
+  QPainter p(&pix);
+  p.setRenderHint(QPainter::Antialiasing, true);
+  const QRect plotRect(40, 12, w - 52, h - 34);
+  p.setPen(QPen(QColor(70, 80, 94), 1));
+  p.drawRect(plotRect);
+
+  if (traj_.size() < 2) {
+    p.setPen(QColor(159, 176, 196));
+    p.drawText(plotRect, Qt::AlignCenter, "Trajectory (t_x / t_y / t_z)\nWaiting for pose samples...");
+    lblTrajPlot_->setPixmap(pix);
+    return;
+  }
+
+  double yMin = 1e18, yMax = -1e18;
+  for (const auto& r : traj_) {
+    yMin = std::min(yMin, std::min(r.t.x(), std::min(r.t.y(), r.t.z())));
+    yMax = std::max(yMax, std::max(r.t.x(), std::max(r.t.y(), r.t.z())));
+  }
+  if (yMax - yMin < 1e-9) { yMax += 1.0; yMin -= 1.0; }
+
+  auto mapPt = [&](int i, double v) {
+    double x = plotRect.left() + (double)i * (plotRect.width() - 1) / (double)(traj_.size() - 1);
+    double y = plotRect.bottom() - (v - yMin) * (plotRect.height() - 1) / (yMax - yMin);
+    return QPointF(x, y);
+  };
+
+  auto drawSeries = [&](const QColor& c, int axis) {
+    QPainterPath path;
+    for (int i = 0; i < (int)traj_.size(); ++i) {
+      double v = axis == 0 ? traj_[i].t.x() : (axis == 1 ? traj_[i].t.y() : traj_[i].t.z());
+      QPointF pt = mapPt(i, v);
+      if (i == 0) path.moveTo(pt); else path.lineTo(pt);
+    }
+    p.setPen(QPen(c, 1.7));
+    p.drawPath(path);
+  };
+
+  drawSeries(QColor(255, 99, 132), 0);
+  drawSeries(QColor(80, 220, 255), 1);
+  drawSeries(QColor(120, 220, 120), 2);
+
+  p.setPen(QColor(170, 182, 198));
+  p.drawText(6, 16, QString("max=%1").arg(yMax, 0, 'f', 3));
+  p.drawText(6, h - 8, QString("min=%1").arg(yMin, 0, 'f', 3));
+  p.drawText(plotRect.left(), h - 8, "time");
+
+  p.fillRect(w - 128, 10, 118, 46, QColor(23, 29, 36, 210));
+  p.setPen(QColor(255, 99, 132)); p.drawText(w - 120, 26, "t_x");
+  p.setPen(QColor(80, 220, 255)); p.drawText(w - 120, 39, "t_y");
+  p.setPen(QColor(120, 220, 120)); p.drawText(w - 120, 52, "t_z");
+
+  lblTrajPlot_->setPixmap(pix);
+}
+
 void MainWindow::onPoseFromWorker(const PoseResult& r) {
   if (r.ok) {
     t_wr_ = Eigen::Vector3d(r.t[0], r.t[1], r.t[2]);
@@ -2002,6 +2071,7 @@ void MainWindow::onPoseFromWorker(const PoseResult& r) {
   }
   if (lblLatency_) lblLatency_->setText(QString("Latency: %1 ms (obs=%2)")
                                        .arg(r.latency_ms,0,'f',1).arg(r.obs_count));
+  refreshTrajectoryPlot();
 }
 
 void MainWindow::rebuildSourceDocks() {

@@ -183,6 +183,7 @@ private:
 
   void updateStatus();
   bool runCalibrationOnPairs(const std::vector<int>& pairIndices, bool updateTable);
+  void refreshTrajectoryPlot();
 
 private:
   // Inputs
@@ -301,6 +302,7 @@ private:
   QCheckBox* chkPose_=nullptr;
   QPushButton* btnPrintPose_=nullptr;
   QLabel* lblInliers_=nullptr;
+  QLabel* lblTrajPlot_=nullptr;
 
   // Settings
   QSettings settings_;
