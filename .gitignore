@@ -1,0 +1,25 @@
+# build artifacts
+/build/
+*.obj
+*.o
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.pdb
+
+# generated / packaged binary datasets
+/testdata/**/*.bmp
+/testdata/**/*.png
+/testdata/**/*.jpg
+/testdata/**/*.jpeg
+/testdata/**/*.zip
+
+# binary assets (global)
+*.bmp
+*.png
+*.jpg
+*.jpeg
+*.zip
