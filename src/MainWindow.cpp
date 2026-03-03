@@ -2,6 +2,7 @@
 #include "MainWindow.h"
 #include "CaptureWorker.h"
 #include "SolveWorker.h"
+#include "QCustomPlot.h"
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -24,9 +25,7 @@
 #include <QStyle>
 #include <QFrame>
 #include <QIntValidator>
-#include <QPainter>
 #include <functional>
-#include <array>
 #include <climits>
 
 static QString nowStr() {
@@ -694,16 +693,30 @@ void MainWindow::buildUI() {
     trkv->addWidget(btnExportTraj_);
     trkv->addWidget(lblInliers_);
     trkv->addWidget(lblPose_);
-    lblTrajPosPlot_ = new QLabel(tabTrk);
+    lblTrajPosPlot_ = new QCustomPlot(tabTrk);
     lblTrajPosPlot_->setMinimumHeight(160);
-    lblTrajPosPlot_->setAlignment(Qt::AlignCenter);
     lblTrajPosPlot_->setStyleSheet("background:#1d232b;border:1px solid #3a4250;color:#9fb0c4;");
+    lblTrajPosPlot_->xAxis->setLabel("t");
+    lblTrajPosPlot_->yAxis->setLabel("Position");
+    lblTrajPosPlot_->addGraph();
+    lblTrajPosPlot_->addGraph();
+    lblTrajPosPlot_->addGraph();
+    lblTrajPosPlot_->graph(0)->setPen(QPen(QColor(255,99,132), 1.8));
+    lblTrajPosPlot_->graph(1)->setPen(QPen(QColor(80,220,255), 1.8));
+    lblTrajPosPlot_->graph(2)->setPen(QPen(QColor(120,220,120), 1.8));
     trkv->addWidget(lblTrajPosPlot_);
 
-    lblTrajAngPlot_ = new QLabel(tabTrk);
+    lblTrajAngPlot_ = new QCustomPlot(tabTrk);
     lblTrajAngPlot_->setMinimumHeight(160);
-    lblTrajAngPlot_->setAlignment(Qt::AlignCenter);
     lblTrajAngPlot_->setStyleSheet("background:#1d232b;border:1px solid #3a4250;color:#9fb0c4;");
+    lblTrajAngPlot_->xAxis->setLabel("t");
+    lblTrajAngPlot_->yAxis->setLabel("Angle-axis");
+    lblTrajAngPlot_->addGraph();
+    lblTrajAngPlot_->addGraph();
+    lblTrajAngPlot_->addGraph();
+    lblTrajAngPlot_->graph(0)->setPen(QPen(QColor(255,179,71), 1.8));
+    lblTrajAngPlot_->graph(1)->setPen(QPen(QColor(186,104,200), 1.8));
+    lblTrajAngPlot_->graph(2)->setPen(QPen(QColor(121,134,203), 1.8));
     trkv->addWidget(lblTrajAngPlot_);
     lblLatency_ = new QLabel("Latency: 0 ms", tabTrk);
     trkv->addWidget(lblFps_);
@@ -2152,92 +2165,71 @@ void MainWindow::refreshTrajectoryPlot() {
     return (int)traj_.size() - 1;
   };
 
-  auto drawPlot = [&](QLabel* target,
-                      const QString& title,
-                      const std::array<QString,3>& names,
-                      const std::array<QColor,3>& colors,
-                      auto getter) {
-    const int w = std::max(360, target->width());
-    const int h = std::max(160, target->height());
-    QPixmap pix(w, h);
-    pix.fill(QColor(29, 35, 43));
-
-    QPainter p(&pix);
-    p.setRenderHint(QPainter::Antialiasing, true);
-    const QRect plotRect(44, 18, w - 60, h - 42);
-    p.setPen(QPen(QColor(70, 80, 94), 1));
-    p.drawRect(plotRect);
+  auto drawPlot = [&](QCustomPlot* plot,
+                      auto getter,
+                      const QStringList& names,
+                      const QList<QColor>& colors) {
+    if (plot->graphCount() < 3) return;
 
     if (traj_.size() < 2) {
-      p.setPen(QColor(159, 176, 196));
-      p.drawText(plotRect, Qt::AlignCenter, title + "\nWaiting for pose samples...");
-      target->setPixmap(pix);
+      for (int k=0;k<3;++k) {
+        plot->graph(k)->setData({}, {});
+      }
+      plot->clearItems();
+      plot->replot();
       return;
     }
 
+    QVector<double> xs((int)traj_.size());
+    QVector<double> y0((int)traj_.size()), y1((int)traj_.size()), y2((int)traj_.size());
     double yMin = 1e18, yMax = -1e18;
-    for (const auto& r : traj_) {
-      for (int k=0;k<3;++k) {
-        const double v = getter(r, k);
-        yMin = std::min(yMin, v);
-        yMax = std::max(yMax, v);
-      }
+    for (int i=0;i<(int)traj_.size();++i) {
+      xs[i] = i;
+      y0[i] = getter(traj_[i], 0);
+      y1[i] = getter(traj_[i], 1);
+      y2[i] = getter(traj_[i], 2);
+      yMin = std::min(yMin, std::min(y0[i], std::min(y1[i], y2[i])));
+      yMax = std::max(yMax, std::max(y0[i], std::max(y1[i], y2[i])));
     }
     if (yMax - yMin < 1e-12) { yMax += 1.0; yMin -= 1.0; }
 
-    auto mapPt = [&](int i, double v) {
-      double x = plotRect.left() + (double)i * (plotRect.width() - 1) / (double)(traj_.size() - 1);
-      double y = plotRect.bottom() - (v - yMin) * (plotRect.height() - 1) / (yMax - yMin);
-      return QPointF(x, y);
-    };
+    plot->graph(0)->setData(xs, y0);
+    plot->graph(1)->setData(xs, y1);
+    plot->graph(2)->setData(xs, y2);
 
-    for (int k=0;k<3;++k) {
-      QPainterPath path;
-      for (int i = 0; i < (int)traj_.size(); ++i) {
-        QPointF pt = mapPt(i, getter(traj_[i], k));
-        if (i == 0) path.moveTo(pt); else path.lineTo(pt);
-      }
-      p.setPen(QPen(colors[k], 1.6));
-      p.drawPath(path);
-    }
+    plot->xAxis->setRange(0, std::max(1, (int)traj_.size()-1));
+    plot->yAxis->setRange(yMin, yMax);
 
+    plot->clearItems();
     const int curIdx = currentTrajIndex();
     if (curIdx >= 0 && curIdx < (int)traj_.size()) {
-      const double x = plotRect.left() + (double)curIdx * (plotRect.width() - 1) / (double)(traj_.size() - 1);
-      p.setPen(QPen(QColor(255, 70, 70), 1.2));
-      p.drawLine(QPointF(x, plotRect.top()), QPointF(x, plotRect.bottom()));
+      auto* cursor = new QCPItemStraightLine(plot);
+      cursor->setPen(QPen(QColor(255,70,70), 1.2));
+      cursor->point1->setCoords(curIdx, yMin);
+      cursor->point2->setCoords(curIdx, yMax);
+      plot->addItem(cursor);
 
       for (int k=0;k<3;++k) {
-        const double v = getter(traj_[curIdx], k);
-        QPointF pt = mapPt(curIdx, v);
-        p.setBrush(colors[k]);
-        p.setPen(Qt::NoPen);
-        p.drawEllipse(pt, 2.8, 2.8);
-        p.setPen(colors[k]);
-        p.drawText(pt + QPointF(6, -6 - 12*k), QString("%1=%2").arg(names[k]).arg(v, 0, 'f', 3));
+        double v = getter(traj_[curIdx], k);
+        auto* txt = new QCPItemText(plot);
+        txt->setColor(colors[k]);
+        txt->position->setCoords(curIdx, v);
+        txt->setText(QString("%1=%2").arg(names[k]).arg(v, 0, 'f', 3));
+        plot->addItem(txt);
       }
     }
-
-    p.setPen(QColor(170, 182, 198));
-    p.drawText(8, 16, title);
-    p.drawText(8, h - 10, QString("min=%1").arg(yMin,0,'f',3));
-    p.drawText(150, h - 10, QString("max=%1").arg(yMax,0,'f',3));
-    p.drawText(w - 42, h - 10, "t");
-
-    target->setPixmap(pix);
+    plot->replot();
   };
 
   drawPlot(lblTrajPosPlot_,
-           "Position vs t",
+           [](const TrajRow& r, int k){ return k==0 ? r.t.x() : (k==1 ? r.t.y() : r.t.z()); },
            {"x", "y", "z"},
-           {QColor(255,99,132), QColor(80,220,255), QColor(120,220,120)},
-           [](const TrajRow& r, int k){ return k==0 ? r.t.x() : (k==1 ? r.t.y() : r.t.z()); });
+           {QColor(255,99,132), QColor(80,220,255), QColor(120,220,120)});
 
   drawPlot(lblTrajAngPlot_,
-           "Angle-axis vs t",
+           [](const TrajRow& r, int k){ return k==0 ? r.aa.x() : (k==1 ? r.aa.y() : r.aa.z()); },
            {"aa_x", "aa_y", "aa_z"},
-           {QColor(255,179,71), QColor(186,104,200), QColor(121,134,203)},
-           [](const TrajRow& r, int k){ return k==0 ? r.aa.x() : (k==1 ? r.aa.y() : r.aa.z()); });
+           {QColor(255,179,71), QColor(186,104,200), QColor(121,134,203)});
 }
 
 void MainWindow::onPoseFromWorker(const PoseResult& r) {

@@ -23,6 +23,8 @@ add_executable(multicam_rig_toolkit_qt
   src/Core.cpp
   src/CaptureWorker.h
   src/SolveWorker.h
+  src/QCustomPlot.h
+  src/QCustomPlot.cpp
 )
 
 target_link_libraries(multicam_rig_toolkit_qt
