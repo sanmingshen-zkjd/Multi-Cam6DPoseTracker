@@ -2,7 +2,7 @@
 #include "MainWindow.h"
 #include "CaptureWorker.h"
 #include "SolveWorker.h"
-#include "QCustomPlot.h"
+#include "qcustomplot.h"
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
