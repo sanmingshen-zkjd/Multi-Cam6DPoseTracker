@@ -701,9 +701,12 @@ void MainWindow::buildUI() {
     lblTrajPosPlot_->addGraph();
     lblTrajPosPlot_->addGraph();
     lblTrajPosPlot_->addGraph();
+    lblTrajPosPlot_->addGraph(); // red cursor line
     lblTrajPosPlot_->graph(0)->setPen(QPen(QColor(255,99,132), 1.8));
     lblTrajPosPlot_->graph(1)->setPen(QPen(QColor(80,220,255), 1.8));
     lblTrajPosPlot_->graph(2)->setPen(QPen(QColor(120,220,120), 1.8));
+    lblTrajPosPlot_->graph(3)->setPen(QPen(QColor(255,70,70), 1.2));
+    lblTrajPosPlot_->legend->setVisible(true);
     trkv->addWidget(lblTrajPosPlot_);
 
     lblTrajAngPlot_ = new QCustomPlot(tabTrk);
@@ -714,9 +717,12 @@ void MainWindow::buildUI() {
     lblTrajAngPlot_->addGraph();
     lblTrajAngPlot_->addGraph();
     lblTrajAngPlot_->addGraph();
+    lblTrajAngPlot_->addGraph(); // red cursor line
     lblTrajAngPlot_->graph(0)->setPen(QPen(QColor(255,179,71), 1.8));
     lblTrajAngPlot_->graph(1)->setPen(QPen(QColor(186,104,200), 1.8));
     lblTrajAngPlot_->graph(2)->setPen(QPen(QColor(121,134,203), 1.8));
+    lblTrajAngPlot_->graph(3)->setPen(QPen(QColor(255,70,70), 1.2));
+    lblTrajAngPlot_->legend->setVisible(true);
     trkv->addWidget(lblTrajAngPlot_);
     lblLatency_ = new QLabel("Latency: 0 ms", tabTrk);
     trkv->addWidget(lblFps_);
@@ -2169,13 +2175,10 @@ void MainWindow::refreshTrajectoryPlot() {
                       auto getter,
                       const QStringList& names,
                       const QList<QColor>& colors) {
-    if (plot->graphCount() < 3) return;
+    if (plot->graphCount() < 4) return;
 
     if (traj_.size() < 2) {
-      for (int k=0;k<3;++k) {
-        plot->graph(k)->setData({}, {});
-      }
-      plot->clearItems();
+      for (int k=0;k<4;++k) plot->graph(k)->setData({}, {});
       plot->replot();
       return;
     }
@@ -2196,27 +2199,27 @@ void MainWindow::refreshTrajectoryPlot() {
     plot->graph(0)->setData(xs, y0);
     plot->graph(1)->setData(xs, y1);
     plot->graph(2)->setData(xs, y2);
+    plot->graph(0)->setName(names[0]);
+    plot->graph(1)->setName(names[1]);
+    plot->graph(2)->setName(names[2]);
 
     plot->xAxis->setRange(0, std::max(1, (int)traj_.size()-1));
     plot->yAxis->setRange(yMin, yMax);
 
-    plot->clearItems();
     const int curIdx = currentTrajIndex();
     if (curIdx >= 0 && curIdx < (int)traj_.size()) {
-      auto* cursor = new QCPItemStraightLine(plot);
-      cursor->setPen(QPen(QColor(255,70,70), 1.2));
-      cursor->point1->setCoords(curIdx, yMin);
-      cursor->point2->setCoords(curIdx, yMax);
-      plot->addItem(cursor);
-
-      for (int k=0;k<3;++k) {
-        double v = getter(traj_[curIdx], k);
-        auto* txt = new QCPItemText(plot);
-        txt->setColor(colors[k]);
-        txt->position->setCoords(curIdx, v);
-        txt->setText(QString("%1=%2").arg(names[k]).arg(v, 0, 'f', 3));
-        plot->addItem(txt);
-      }
+      QVector<double> cx(2), cy(2);
+      cx[0] = curIdx; cx[1] = curIdx;
+      cy[0] = yMin;   cy[1] = yMax;
+      plot->graph(3)->setData(cx, cy);
+      plot->graph(3)->setName(QString("t=%1 | %2=%3 | %4=%5 | %6=%7")
+                              .arg(curIdx)
+                              .arg(names[0]).arg(getter(traj_[curIdx], 0), 0, 'f', 3)
+                              .arg(names[1]).arg(getter(traj_[curIdx], 1), 0, 'f', 3)
+                              .arg(names[2]).arg(getter(traj_[curIdx], 2), 0, 'f', 3));
+    } else {
+      plot->graph(3)->setData({}, {});
+      plot->graph(3)->setName("cursor");
     }
     plot->replot();
   };
