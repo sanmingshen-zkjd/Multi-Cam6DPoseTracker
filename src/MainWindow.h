@@ -37,6 +37,7 @@
 #include <QToolButton>
 #include <QLineEdit>
 #include <QStringList>
+#include <QVector>
 
 #include <opencv2/opencv.hpp>
 #include "Core.h"
@@ -181,6 +182,9 @@ private:
   void updateStatus();
   bool runCalibrationOnPairs(const std::vector<int>& pairIndices, bool updateTable);
   void refreshTrajectoryPlot();
+  void onAddVisualizationChart();
+  void onVisualizationPlotContextMenu(const QPoint& pos);
+  bool chooseVisualizationDataTypes(QVector<int>& components, QString& labelOut);
 
 private:
   // Inputs
@@ -302,6 +306,15 @@ private:
   QLabel* lblInliers_=nullptr;
   QCustomPlot* lblTrajPosPlot_=nullptr;
   QCustomPlot* lblTrajAngPlot_=nullptr;
+  QPushButton* btnAddVisChart_=nullptr;
+  QVBoxLayout* visChartsLayout_=nullptr;
+  struct VisChartConfig {
+    QCustomPlot* plot = nullptr;
+    QVector<int> components;
+    QString yLabel;
+    bool removable = false;
+  };
+  std::vector<VisChartConfig> visCharts_;
 
   // Settings
   QSettings settings_;

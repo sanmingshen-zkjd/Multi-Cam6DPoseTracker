@@ -25,6 +25,11 @@
 #include <QStyle>
 #include <QFrame>
 #include <QIntValidator>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QCheckBox>
+#include <QFormLayout>
+#include <QMenu>
 #include <functional>
 #include <climits>
 
@@ -645,6 +650,11 @@ void MainWindow::buildUI() {
     // Tracking tab
     QWidget* tabTrk = new QWidget(actionTabs_);
     QVBoxLayout* trkv = new QVBoxLayout(tabTrk);
+    QTabWidget* trkTabs = new QTabWidget(tabTrk);
+    QWidget* trkMainPage = new QWidget(trkTabs);
+    QWidget* trkVisPage = new QWidget(trkTabs);
+    QVBoxLayout* trkMainLayout = new QVBoxLayout(trkMainPage);
+    visChartsLayout_ = new QVBoxLayout(trkVisPage);
 
     btnLoadTag_ = new QPushButton("Load Tag Map (TXT)", tabTrk);
     btnLoadYaml_ = new QPushButton("Load Calibration (YAML)", tabTrk);
@@ -680,20 +690,28 @@ void MainWindow::buildUI() {
     lblPose_ = new QLabel("Pose: -", tabTrk);
     lblPose_->setWordWrap(true);
 
-    trkv->addWidget(btnLoadTag_);
+    trkMainLayout->addWidget(btnLoadTag_);
     lblTagPath_ = new QLabel("TagMap: (none)", tabTrk);
-    trkv->addWidget(lblTagPath_);
-    trkv->addWidget(btnLoadYaml_);
+    trkMainLayout->addWidget(lblTagPath_);
+    trkMainLayout->addWidget(btnLoadYaml_);
     lblYamlPath_ = new QLabel("Calib: (none)", tabTrk);
-    trkv->addWidget(lblYamlPath_);
-    trkv->addWidget(gbParams);
-   // trkv->addWidget(chkPose_);
-    trkv->addWidget(btnDetectAll_);
+    trkMainLayout->addWidget(lblYamlPath_);
+    trkMainLayout->addWidget(gbParams);
+   // trkMainLayout->addWidget(chkPose_);
+    trkMainLayout->addWidget(btnDetectAll_);
     btnExportTraj_ = new QPushButton("Export Trajectory CSV", tabTrk);
-    trkv->addWidget(btnExportTraj_);
-    trkv->addWidget(lblInliers_);
-    trkv->addWidget(lblPose_);
-    lblTrajPosPlot_ = new QCustomPlot(tabTrk);
+    trkMainLayout->addWidget(btnExportTraj_);
+    trkMainLayout->addWidget(lblInliers_);
+    trkMainLayout->addWidget(lblPose_);
+    trkMainLayout->addWidget(lblFps_);
+    lblLatency_ = new QLabel("Latency: 0 ms", tabTrk);
+    trkMainLayout->addWidget(lblLatency_);
+    trkMainLayout->addStretch(1);
+
+    btnAddVisChart_ = new QPushButton("新增图表", trkVisPage);
+    visChartsLayout_->addWidget(btnAddVisChart_);
+
+    lblTrajPosPlot_ = new QCustomPlot(trkVisPage);
     lblTrajPosPlot_->setMinimumHeight(160);
     lblTrajPosPlot_->setStyleSheet("background:#1d232b;border:1px solid #3a4250;color:#9fb0c4;");
     lblTrajPosPlot_->xAxis->setLabel("t");
@@ -707,9 +725,9 @@ void MainWindow::buildUI() {
     lblTrajPosPlot_->graph(2)->setPen(QPen(QColor(120,220,120), 1.8));
     lblTrajPosPlot_->graph(3)->setPen(QPen(QColor(255,70,70), 1.2));
     lblTrajPosPlot_->legend->setVisible(true);
-    trkv->addWidget(lblTrajPosPlot_);
+    visChartsLayout_->addWidget(lblTrajPosPlot_);
 
-    lblTrajAngPlot_ = new QCustomPlot(tabTrk);
+    lblTrajAngPlot_ = new QCustomPlot(trkVisPage);
     lblTrajAngPlot_->setMinimumHeight(160);
     lblTrajAngPlot_->setStyleSheet("background:#1d232b;border:1px solid #3a4250;color:#9fb0c4;");
     lblTrajAngPlot_->xAxis->setLabel("t");
@@ -723,20 +741,31 @@ void MainWindow::buildUI() {
     lblTrajAngPlot_->graph(2)->setPen(QPen(QColor(121,134,203), 1.8));
     lblTrajAngPlot_->graph(3)->setPen(QPen(QColor(255,70,70), 1.2));
     lblTrajAngPlot_->legend->setVisible(true);
-    trkv->addWidget(lblTrajAngPlot_);
-    lblLatency_ = new QLabel("Latency: 0 ms", tabTrk);
-    trkv->addWidget(lblFps_);
-    trkv->addWidget(lblLatency_);
-    trkv->addStretch(1);
+    visChartsLayout_->addWidget(lblTrajAngPlot_);
+    visChartsLayout_->addStretch(1);
+
+    trkTabs->addTab(trkMainPage, "Tracking");
+    trkTabs->addTab(trkVisPage, QString::fromUtf8("可视化"));
+    trkv->addWidget(trkTabs);
 
     connect(btnLoadTag_, &QPushButton::clicked, this, &MainWindow::onLoadTagMap);
     connect(btnLoadYaml_, &QPushButton::clicked, this, &MainWindow::onLoadCalibYaml);
   //  connect(chkPose_, &QCheckBox::toggled, this, &MainWindow::onTogglePose);
     connect(btnDetectAll_, &QPushButton::clicked, this, &MainWindow::onDetectAllTrackingFrames);
     connect(btnExportTraj_, &QPushButton::clicked, this, &MainWindow::onExportTrajectory);
+    connect(btnAddVisChart_, &QPushButton::clicked, this, &MainWindow::onAddVisualizationChart);
     connect(spRansacIters_, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int v){ ransac_iters_=v; if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, true); });
     connect(spInlierThresh_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double v){ inlier_thresh_px_=v; if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, true); });
     connect(cbTagDict_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int){ tag_dict_id_=cbTagDict_->currentData().toInt(); if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, true); });
+
+    lblTrajPosPlot_->setContextMenuPolicy(Qt::CustomContextMenu);
+    lblTrajAngPlot_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(lblTrajPosPlot_, &QWidget::customContextMenuRequested, this, &MainWindow::onVisualizationPlotContextMenu);
+    connect(lblTrajAngPlot_, &QWidget::customContextMenuRequested, this, &MainWindow::onVisualizationPlotContextMenu);
+
+    visCharts_.clear();
+    visCharts_.push_back({lblTrajPosPlot_, {0,1,2}, "Position", false});
+    visCharts_.push_back({lblTrajAngPlot_, {3,4,5}, "Angle-axis", false});
 
     actionTabs_->addTab(tabCap, "Capture");
     actionTabs_->addTab(tabCal, "Calibration");
@@ -2158,8 +2187,113 @@ void MainWindow::onFramesFromWorker(FramePack frames, qint64 capture_ts_ms) {
   }
 }
 
+void MainWindow::onAddVisualizationChart() {
+  if (!visChartsLayout_) return;
+
+  QVector<int> comps;
+  QString ylabel;
+  if (!chooseVisualizationDataTypes(comps, ylabel)) return;
+
+  QCustomPlot* plot = new QCustomPlot(actionTabs_);
+  plot->setMinimumHeight(160);
+  plot->setStyleSheet("background:#1d232b;border:1px solid #3a4250;color:#9fb0c4;");
+  plot->xAxis->setLabel("t");
+  plot->yAxis->setLabel(ylabel);
+  for (int i=0;i<comps.size()+1;++i) plot->addGraph();
+  plot->legend->setVisible(true);
+  plot->setContextMenuPolicy(Qt::CustomContextMenu);
+  connect(plot, &QWidget::customContextMenuRequested, this, &MainWindow::onVisualizationPlotContextMenu);
+
+  visChartsLayout_->insertWidget(std::max(1, visChartsLayout_->count()-1), plot);
+  visCharts_.push_back({plot, comps, ylabel, true});
+  refreshTrajectoryPlot();
+}
+
+bool MainWindow::chooseVisualizationDataTypes(QVector<int>& components, QString& labelOut) {
+  QDialog dlg(this);
+  dlg.setWindowTitle(QString::fromUtf8("选择数据类型"));
+  QVBoxLayout* layout = new QVBoxLayout(&dlg);
+
+  QCheckBox* c[6];
+  const QString names[6] = {"x", "y", "z", "aa_x", "aa_y", "aa_z"};
+  for (int i=0;i<6;++i) {
+    c[i] = new QCheckBox(names[i], &dlg);
+    if (i < 3) c[i]->setChecked(true);
+    layout->addWidget(c[i]);
+  }
+
+  QDialogButtonBox* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+  connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+  layout->addWidget(box);
+
+  if (dlg.exec() != QDialog::Accepted) return false;
+
+  components.clear();
+  QStringList labels;
+  for (int i=0;i<6;++i) {
+    if (c[i]->isChecked()) {
+      components.push_back(i);
+      labels << names[i];
+    }
+  }
+  if (components.isEmpty()) return false;
+
+  labelOut = labels.join("/");
+  return true;
+}
+
+void MainWindow::onVisualizationPlotContextMenu(const QPoint& pos) {
+  auto* plot = qobject_cast<QCustomPlot*>(sender());
+  if (!plot) return;
+
+  int idx = -1;
+  for (int i=0;i<(int)visCharts_.size(); ++i) {
+    if (visCharts_[i].plot == plot) { idx = i; break; }
+  }
+  if (idx < 0) return;
+
+  QMenu menu(this);
+  QAction* actSelect = menu.addAction(QString::fromUtf8("选择数据类型"));
+  QAction* actRemove = nullptr;
+  if (visCharts_[idx].removable) {
+    actRemove = menu.addAction(QString::fromUtf8("删除图表"));
+  }
+
+  QAction* picked = menu.exec(plot->mapToGlobal(pos));
+  if (!picked) return;
+
+  if (picked == actSelect) {
+    QVector<int> comps;
+    QString ylabel;
+    if (!chooseVisualizationDataTypes(comps, ylabel)) return;
+    visCharts_[idx].components = comps;
+    visCharts_[idx].yLabel = ylabel;
+    plot->yAxis->setLabel(ylabel);
+
+    while (plot->graphCount() > comps.size()+1) plot->removeGraph(plot->graphCount()-1);
+    while (plot->graphCount() < comps.size()+1) plot->addGraph();
+    refreshTrajectoryPlot();
+    return;
+  }
+
+  if (actRemove && picked == actRemove) {
+    QCustomPlot* p = visCharts_[idx].plot;
+    visCharts_.erase(visCharts_.begin() + idx);
+    if (visChartsLayout_) visChartsLayout_->removeWidget(p);
+    p->deleteLater();
+    refreshTrajectoryPlot();
+  }
+}
+
 void MainWindow::refreshTrajectoryPlot() {
-  if (!lblTrajPosPlot_ || !lblTrajAngPlot_) return;
+  if (visCharts_.empty()) return;
+
+  static const QString kNames[6] = {"x", "y", "z", "aa_x", "aa_y", "aa_z"};
+  static const QColor kColors[6] = {
+    QColor(255,99,132), QColor(80,220,255), QColor(120,220,120),
+    QColor(255,179,71), QColor(186,104,200), QColor(121,134,203)
+  };
 
   auto currentTrajIndex = [this]() -> int {
     if (traj_.empty()) return -1;
@@ -2171,68 +2305,77 @@ void MainWindow::refreshTrajectoryPlot() {
     return (int)traj_.size() - 1;
   };
 
-  auto drawPlot = [&](QCustomPlot* plot,
-                      auto getter,
-                      const QStringList& names,
-                      const QList<QColor>& colors) {
-    if (plot->graphCount() < 4) return;
+  auto getComp = [&](const TrajRow& row, int comp) {
+    switch (comp) {
+      case 0: return row.t.x();
+      case 1: return row.t.y();
+      case 2: return row.t.z();
+      case 3: return row.aa.x();
+      case 4: return row.aa.y();
+      default: return row.aa.z();
+    }
+  };
+
+  for (auto& cfg : visCharts_) {
+    QCustomPlot* plot = cfg.plot;
+    if (!plot) continue;
+    const int nSeries = cfg.components.size();
+    if (nSeries <= 0) continue;
+
+    while (plot->graphCount() > nSeries + 1) plot->removeGraph(plot->graphCount()-1);
+    while (plot->graphCount() < nSeries + 1) plot->addGraph();
 
     if (traj_.size() < 2) {
-      for (int k=0;k<4;++k) plot->graph(k)->setData({}, {});
+      for (int g=0; g<plot->graphCount(); ++g) plot->graph(g)->setData({}, {});
       plot->replot();
-      return;
+      continue;
     }
 
     QVector<double> xs((int)traj_.size());
-    QVector<double> y0((int)traj_.size()), y1((int)traj_.size()), y2((int)traj_.size());
+    for (int i=0;i<(int)traj_.size();++i) xs[i] = i;
+
     double yMin = 1e18, yMax = -1e18;
-    for (int i=0;i<(int)traj_.size();++i) {
-      xs[i] = i;
-      y0[i] = getter(traj_[i], 0);
-      y1[i] = getter(traj_[i], 1);
-      y2[i] = getter(traj_[i], 2);
-      yMin = std::min(yMin, std::min(y0[i], std::min(y1[i], y2[i])));
-      yMax = std::max(yMax, std::max(y0[i], std::max(y1[i], y2[i])));
+    for (int g=0; g<nSeries; ++g) {
+      int comp = cfg.components[g];
+      QVector<double> ys((int)traj_.size());
+      for (int i=0;i<(int)traj_.size(); ++i) {
+        ys[i] = getComp(traj_[i], comp);
+        yMin = std::min(yMin, ys[i]);
+        yMax = std::max(yMax, ys[i]);
+      }
+      plot->graph(g)->setData(xs, ys);
+      plot->graph(g)->setPen(QPen(kColors[comp], 1.8));
+      plot->graph(g)->setName(kNames[comp]);
     }
     if (yMax - yMin < 1e-12) { yMax += 1.0; yMin -= 1.0; }
-
-    plot->graph(0)->setData(xs, y0);
-    plot->graph(1)->setData(xs, y1);
-    plot->graph(2)->setData(xs, y2);
-    plot->graph(0)->setName(names[0]);
-    plot->graph(1)->setName(names[1]);
-    plot->graph(2)->setName(names[2]);
 
     plot->xAxis->setRange(0, std::max(1, (int)traj_.size()-1));
     plot->yAxis->setRange(yMin, yMax);
 
     const int curIdx = currentTrajIndex();
+    const int cursorGraph = nSeries;
     if (curIdx >= 0 && curIdx < (int)traj_.size()) {
       QVector<double> cx(2), cy(2);
       cx[0] = curIdx; cx[1] = curIdx;
       cy[0] = yMin;   cy[1] = yMax;
-      plot->graph(3)->setData(cx, cy);
-      plot->graph(3)->setName(QString("t=%1 | %2=%3 | %4=%5 | %6=%7")
-                              .arg(curIdx)
-                              .arg(names[0]).arg(getter(traj_[curIdx], 0), 0, 'f', 3)
-                              .arg(names[1]).arg(getter(traj_[curIdx], 1), 0, 'f', 3)
-                              .arg(names[2]).arg(getter(traj_[curIdx], 2), 0, 'f', 3));
+      plot->graph(cursorGraph)->setData(cx, cy);
+      plot->graph(cursorGraph)->setPen(QPen(QColor(255,70,70), 1.2));
+
+      QStringList vals;
+      vals << QString("t=%1").arg(curIdx);
+      for (int g=0; g<nSeries; ++g) {
+        int comp = cfg.components[g];
+        vals << QString("%1=%2").arg(kNames[comp]).arg(getComp(traj_[curIdx], comp), 0, 'f', 3);
+      }
+      plot->graph(cursorGraph)->setName(vals.join(" | "));
     } else {
-      plot->graph(3)->setData({}, {});
-      plot->graph(3)->setName("cursor");
+      plot->graph(cursorGraph)->setData({}, {});
+      plot->graph(cursorGraph)->setName("cursor");
     }
+
+    plot->legend->setVisible(true);
     plot->replot();
-  };
-
-  drawPlot(lblTrajPosPlot_,
-           [](const TrajRow& r, int k){ return k==0 ? r.t.x() : (k==1 ? r.t.y() : r.t.z()); },
-           {"x", "y", "z"},
-           {QColor(255,99,132), QColor(80,220,255), QColor(120,220,120)});
-
-  drawPlot(lblTrajAngPlot_,
-           [](const TrajRow& r, int k){ return k==0 ? r.aa.x() : (k==1 ? r.aa.y() : r.aa.z()); },
-           {"aa_x", "aa_y", "aa_z"},
-           {QColor(255,179,71), QColor(186,104,200), QColor(121,134,203)});
+  }
 }
 
 void MainWindow::onPoseFromWorker(const PoseResult& r) {
