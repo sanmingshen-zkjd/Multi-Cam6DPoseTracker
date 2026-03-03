@@ -310,6 +310,7 @@ private:
   QVBoxLayout* visChartsLayout_=nullptr;
   struct VisChartConfig {
     QCustomPlot* plot = nullptr;
+    QComboBox* selector = nullptr;
     QVector<int> components;
     QString yLabel;
     bool removable = false;

@@ -654,7 +654,14 @@ void MainWindow::buildUI() {
     QWidget* trkMainPage = new QWidget(trkTabs);
     QWidget* trkVisPage = new QWidget(trkTabs);
     QVBoxLayout* trkMainLayout = new QVBoxLayout(trkMainPage);
-    visChartsLayout_ = new QVBoxLayout(trkVisPage);
+    QVBoxLayout* trkVisRoot = new QVBoxLayout(trkVisPage);
+    QScrollArea* visScrollArea = new QScrollArea(trkVisPage);
+    visScrollArea->setWidgetResizable(true);
+    visScrollArea->setFrameShape(QFrame::NoFrame);
+    QWidget* visContainer = new QWidget(visScrollArea);
+    visChartsLayout_ = new QVBoxLayout(visContainer);
+    visScrollArea->setWidget(visContainer);
+    trkVisRoot->addWidget(visScrollArea);
 
     btnLoadTag_ = new QPushButton("Load Tag Map (TXT)", tabTrk);
     btnLoadYaml_ = new QPushButton("Load Calibration (YAML)", tabTrk);
@@ -711,6 +718,13 @@ void MainWindow::buildUI() {
     btnAddVisChart_ = new QPushButton("新增图表", trkVisPage);
     visChartsLayout_->addWidget(btnAddVisChart_);
 
+    auto makeSeriesSelector = [trkVisPage]() {
+      QComboBox* cb = new QComboBox(trkVisPage);
+      cb->setToolTip(QString::fromUtf8("下拉选择显示的曲线"));
+      cb->addItem(QString::fromUtf8("全部"));
+      return cb;
+    };
+
     lblTrajPosPlot_ = new QCustomPlot(trkVisPage);
     lblTrajPosPlot_->setMinimumHeight(160);
     lblTrajPosPlot_->setStyleSheet("background:#1d232b;border:1px solid #3a4250;color:#9fb0c4;");
@@ -724,7 +738,9 @@ void MainWindow::buildUI() {
     lblTrajPosPlot_->graph(1)->setPen(QPen(QColor(80,220,255), 1.8));
     lblTrajPosPlot_->graph(2)->setPen(QPen(QColor(120,220,120), 1.8));
     lblTrajPosPlot_->graph(3)->setPen(QPen(QColor(255,70,70), 1.2));
-    lblTrajPosPlot_->legend->setVisible(true);
+    lblTrajPosPlot_->legend->setVisible(false);
+    QComboBox* posSelector = makeSeriesSelector();
+    visChartsLayout_->addWidget(posSelector);
     visChartsLayout_->addWidget(lblTrajPosPlot_);
 
     lblTrajAngPlot_ = new QCustomPlot(trkVisPage);
@@ -740,7 +756,9 @@ void MainWindow::buildUI() {
     lblTrajAngPlot_->graph(1)->setPen(QPen(QColor(186,104,200), 1.8));
     lblTrajAngPlot_->graph(2)->setPen(QPen(QColor(121,134,203), 1.8));
     lblTrajAngPlot_->graph(3)->setPen(QPen(QColor(255,70,70), 1.2));
-    lblTrajAngPlot_->legend->setVisible(true);
+    lblTrajAngPlot_->legend->setVisible(false);
+    QComboBox* angSelector = makeSeriesSelector();
+    visChartsLayout_->addWidget(angSelector);
     visChartsLayout_->addWidget(lblTrajAngPlot_);
     visChartsLayout_->addStretch(1);
 
@@ -764,8 +782,11 @@ void MainWindow::buildUI() {
     connect(lblTrajAngPlot_, &QWidget::customContextMenuRequested, this, &MainWindow::onVisualizationPlotContextMenu);
 
     visCharts_.clear();
-    visCharts_.push_back({lblTrajPosPlot_, {0,1,2}, "Position", false});
-    visCharts_.push_back({lblTrajAngPlot_, {3,4,5}, "Angle-axis", false});
+    visCharts_.push_back({lblTrajPosPlot_, posSelector, {0,1,2}, "Position", false});
+    visCharts_.push_back({lblTrajAngPlot_, angSelector, {3,4,5}, "Angle-axis", false});
+
+    connect(posSelector, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int){ refreshTrajectoryPlot(); });
+    connect(angSelector, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int){ refreshTrajectoryPlot(); });
 
     actionTabs_->addTab(tabCap, "Capture");
     actionTabs_->addTab(tabCal, "Calibration");
@@ -778,7 +799,7 @@ void MainWindow::buildUI() {
     // Log window
     log_ = new QTextEdit(dockw);
     log_->setReadOnly(true);
-    log_->setMinimumHeight(240);
+    log_->setMinimumHeight(120);
     dv->addWidget(log_);
 
     dockw->setLayout(dv);
@@ -2200,12 +2221,19 @@ void MainWindow::onAddVisualizationChart() {
   plot->xAxis->setLabel("t");
   plot->yAxis->setLabel(ylabel);
   for (int i=0;i<comps.size()+1;++i) plot->addGraph();
-  plot->legend->setVisible(true);
+  plot->legend->setVisible(false);
   plot->setContextMenuPolicy(Qt::CustomContextMenu);
   connect(plot, &QWidget::customContextMenuRequested, this, &MainWindow::onVisualizationPlotContextMenu);
 
-  visChartsLayout_->insertWidget(std::max(1, visChartsLayout_->count()-1), plot);
-  visCharts_.push_back({plot, comps, ylabel, true});
+  QComboBox* selector = new QComboBox(actionTabs_);
+  selector->addItem(QString::fromUtf8("全部"));
+  selector->setToolTip(QString::fromUtf8("下拉选择显示的曲线"));
+  connect(selector, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int){ refreshTrajectoryPlot(); });
+
+  int insertAt = std::max(1, visChartsLayout_->count()-1);
+  visChartsLayout_->insertWidget(insertAt, selector);
+  visChartsLayout_->insertWidget(insertAt+1, plot);
+  visCharts_.push_back({plot, selector, comps, ylabel, true});
   refreshTrajectoryPlot();
 }
 
@@ -2279,8 +2307,13 @@ void MainWindow::onVisualizationPlotContextMenu(const QPoint& pos) {
 
   if (actRemove && picked == actRemove) {
     QCustomPlot* p = visCharts_[idx].plot;
+    QComboBox* s = visCharts_[idx].selector;
     visCharts_.erase(visCharts_.begin() + idx);
-    if (visChartsLayout_) visChartsLayout_->removeWidget(p);
+    if (visChartsLayout_) {
+      if (s) visChartsLayout_->removeWidget(s);
+      visChartsLayout_->removeWidget(p);
+    }
+    if (s) s->deleteLater();
     p->deleteLater();
     refreshTrajectoryPlot();
   }
@@ -2373,7 +2406,28 @@ void MainWindow::refreshTrajectoryPlot() {
       plot->graph(cursorGraph)->setName("cursor");
     }
 
-    plot->legend->setVisible(true);
+    if (cfg.selector) {
+      QStringList options;
+      options << QString::fromUtf8("全部");
+      for (int g=0; g<nSeries; ++g) {
+        options << kNames[cfg.components[g]];
+      }
+      const int keepIndex = std::max(0, std::min(cfg.selector->currentIndex(), options.size()-1));
+      cfg.selector->blockSignals(true);
+      cfg.selector->clear();
+      cfg.selector->addItems(options);
+      cfg.selector->setCurrentIndex(keepIndex);
+      cfg.selector->blockSignals(false);
+
+      const int sel = cfg.selector->currentIndex();
+      for (int g=0; g<nSeries; ++g) {
+        const bool visible = (sel == 0) || (sel == g+1);
+        plot->graph(g)->setVisible(visible);
+      }
+    }
+
+    plot->graph(cursorGraph)->setVisible(true);
+    plot->legend->setVisible(false);
     plot->replot();
   }
 }
