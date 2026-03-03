@@ -266,7 +266,7 @@ MainWindow::MainWindow(const std::vector<InputSource>& sources,
 
     solveWorker_ = new SolveWorker();
     solveWorker_->setStaticData(&cams_, &tag_corner_map_);
-    solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, pose_on_);
+    solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, true);
     solveWorker_->setInitPose(R_wr_, t_wr_);
     solveWorker_->moveToThread(&solveThread_);
 
@@ -648,8 +648,8 @@ void MainWindow::buildUI() {
 
     btnLoadTag_ = new QPushButton("Load Tag Map (TXT)", tabTrk);
     btnLoadYaml_ = new QPushButton("Load Calibration (YAML)", tabTrk);
-    chkPose_ = new QCheckBox("Pose Estimation ON", tabTrk);
-    chkPose_->setChecked(false);
+  //  chkPose_ = new QCheckBox("Pose Estimation ON", tabTrk);
+  //  chkPose_->setChecked(false);
 
     QGroupBox* gbParams = new QGroupBox("Tracking Parameters", tabTrk);
     QGridLayout* tg = new QGridLayout(gbParams);
@@ -687,7 +687,7 @@ void MainWindow::buildUI() {
     lblYamlPath_ = new QLabel("Calib: (none)", tabTrk);
     trkv->addWidget(lblYamlPath_);
     trkv->addWidget(gbParams);
-    trkv->addWidget(chkPose_);
+   // trkv->addWidget(chkPose_);
     trkv->addWidget(btnDetectAll_);
     btnExportTraj_ = new QPushButton("Export Trajectory CSV", tabTrk);
     trkv->addWidget(btnExportTraj_);
@@ -731,12 +731,12 @@ void MainWindow::buildUI() {
 
     connect(btnLoadTag_, &QPushButton::clicked, this, &MainWindow::onLoadTagMap);
     connect(btnLoadYaml_, &QPushButton::clicked, this, &MainWindow::onLoadCalibYaml);
-    connect(chkPose_, &QCheckBox::toggled, this, &MainWindow::onTogglePose);
+  //  connect(chkPose_, &QCheckBox::toggled, this, &MainWindow::onTogglePose);
     connect(btnDetectAll_, &QPushButton::clicked, this, &MainWindow::onDetectAllTrackingFrames);
     connect(btnExportTraj_, &QPushButton::clicked, this, &MainWindow::onExportTrajectory);
-    connect(spRansacIters_, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int v){ ransac_iters_=v; if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, pose_on_); });
-    connect(spInlierThresh_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double v){ inlier_thresh_px_=v; if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, pose_on_); });
-    connect(cbTagDict_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int){ tag_dict_id_=cbTagDict_->currentData().toInt(); if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, pose_on_); });
+    connect(spRansacIters_, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int v){ ransac_iters_=v; if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, true); });
+    connect(spInlierThresh_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double v){ inlier_thresh_px_=v; if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, true); });
+    connect(cbTagDict_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int){ tag_dict_id_=cbTagDict_->currentData().toInt(); if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, true); });
 
     actionTabs_->addTab(tabCap, "Capture");
     actionTabs_->addTab(tabCal, "Calibration");
@@ -1893,11 +1893,11 @@ void MainWindow::onLoadCalibYaml() {
   logLine(QString("Loaded calib yaml: %1").arg(path));
 }
 
-void MainWindow::onTogglePose(bool on) {
-  pose_on_ = on;
-  if (solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, pose_on_);
-  logLine(QString("Pose estimation %1").arg(on ? "ON" : "OFF"));
-}
+//void MainWindow::onTogglePose(bool on) {
+//  pose_on_ = on;
+//  if (solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, pose_on_);
+//  logLine(QString("Pose estimation %1").arg(on ? "ON" : "OFF"));
+//}
 
 void MainWindow::onDetectAllTrackingFrames() {
   if (mode_ != TRACK) {
@@ -1990,7 +1990,7 @@ void MainWindow::onDetectAllTrackingFrames() {
     }
     if (hasDet) framesWithDetections++;
 
-    if (pose_on_ && (int)cams_.size() == (int)frames.size() && obs.size() >= 3) {
+    if ((int)cams_.size() == (int)frames.size() && obs.size() >= 3) {
       auto res = estimatePoseRansac(cams_, obs, R_wr_, t_wr_, ransac_iters_, inlier_thresh_px_);
       if (res.ok) {
         R_wr_ = res.R_wr;
