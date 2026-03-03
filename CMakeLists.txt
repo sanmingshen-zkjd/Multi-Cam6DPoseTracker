@@ -10,7 +10,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt5 5.15 COMPONENTS Widgets REQUIRED)
+find_package(Qt5 5.15 COMPONENTS Widgets PrintSupport REQUIRED)
 find_package(PkgConfig QUIET)
 
 find_package(OpenCV REQUIRED)
@@ -44,6 +44,7 @@ endif()
 target_link_libraries(multicam_rig_toolkit_qt
   PRIVATE
     Qt5::Widgets
+    Qt5::PrintSupport
     ${OpenCV_LIBS}
     Eigen3::Eigen
 )
