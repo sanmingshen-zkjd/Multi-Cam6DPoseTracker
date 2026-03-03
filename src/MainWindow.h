@@ -299,7 +299,8 @@ private:
   QPushButton* btnDetectAll_=nullptr;
   QLabel* lblPose_=nullptr;
   QLabel* lblInliers_=nullptr;
-  QLabel* lblTrajPlot_=nullptr;
+  QLabel* lblTrajPosPlot_=nullptr;
+  QLabel* lblTrajAngPlot_=nullptr;
 
   // Settings
   QSettings settings_;
