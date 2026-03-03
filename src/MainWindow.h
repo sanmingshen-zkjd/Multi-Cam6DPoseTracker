@@ -131,7 +131,7 @@ private slots:
   // Tracking actions
   void onLoadTagMap();
   void onLoadCalibYaml();
-  void onTogglePose(bool on);
+  //void onTogglePose(bool on);
   void onDetectAllTrackingFrames();
   void onExportTrajectory();
   void onSaveProject();
@@ -204,7 +204,7 @@ private:
   QString calib_path_;
 
   // Pose state
-  bool pose_on_=false;
+ // bool pose_on_=false;
   Eigen::Matrix3d R_wr_ = Eigen::Matrix3d::Identity();
   Eigen::Vector3d t_wr_ = Eigen::Vector3d::Zero();
   int last_inliers_=0;
