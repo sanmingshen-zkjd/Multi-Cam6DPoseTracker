@@ -60,6 +60,7 @@ class CaptureWorker;
 class SolveWorker;
 
 class ImageViewer : public QGraphicsView {
+  Q_OBJECT
 public:
   enum ToolMode { PanTool=0, PointTool=1, LineTool=2 };
   explicit ImageViewer(QWidget* parent=nullptr);
@@ -69,6 +70,9 @@ public:
   void zoomOut();
   void resetView();
   void clearAnnotations();
+
+signals:
+  void linePreviewText(const QString& text);
 
 protected:
   void wheelEvent(QWheelEvent* e) override;
@@ -89,6 +93,7 @@ private:
 };
 
 class MainWindow : public QMainWindow {
+  Q_OBJECT
 public:
   MainWindow(const std::vector<InputSource>& sources,
              int board_w, int board_h, double square_m,
@@ -130,7 +135,7 @@ private slots:
   void onLoadTagMap();
   void onLoadCalibYaml();
   void onTogglePose(bool on);
-  void onDetectAllTrackingFrames();
+  void onPrintPose();
   void onExportTrajectory();
   void onSaveProject();
   void onLoadProject();
@@ -295,8 +300,7 @@ private:
   QLabel* lblTagPath_=nullptr;
   QLabel* lblYamlPath_=nullptr;
   QCheckBox* chkPose_=nullptr;
-  QPushButton* btnDetectAll_=nullptr;
-  QLabel* lblPose_=nullptr;
+  QPushButton* btnPrintPose_=nullptr;
   QLabel* lblInliers_=nullptr;
   QLabel* lblTrajPosPlot_=nullptr;
   QLabel* lblTrajAngPlot_=nullptr;
@@ -328,9 +332,6 @@ private:
   std::vector<CalibrationPair> calib_pairs_;
   std::vector<double> calib_pair_rmse_;
   bool has_computed_calib_ = false;
-
-  // Tracking detect-all overlay cache: source index -> frame index -> visualized frame
-  std::unordered_map<int, std::unordered_map<int64_t, cv::Mat>> detect_overlay_cache_;
 
   // Timer (UI refresh)
   QTimer timer_;

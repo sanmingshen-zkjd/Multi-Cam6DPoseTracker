@@ -18,16 +18,13 @@
 #include <QFile>
 #include <QScrollArea>
 #include <QApplication>
-#include <QScreen>
 #include <QHeaderView>
 #include <QTabBar>
 #include <QStyle>
 #include <QFrame>
 #include <QIntValidator>
-#include <QPainter>
-#include <functional>
+
 #include <array>
-#include <climits>
 
 static QString nowStr() {
   return QDateTime::currentDateTime().toString("hh:mm:ss");
@@ -36,78 +33,6 @@ static QString nowStr() {
 static QStringList kImageNameFilters() {
   return {"*.png", "*.jpg", "*.jpeg", "*.bmp", "*.tif", "*.tiff"};
 }
-
-class ClickJumpSlider : public QSlider {
-public:
-  explicit ClickJumpSlider(Qt::Orientation orientation, QWidget* parent=nullptr)
-      : QSlider(orientation, parent) {}
-
-protected:
-  void mousePressEvent(QMouseEvent* event) override {
-    if (event->button() == Qt::LeftButton) {
-      const int minV = minimum();
-      const int maxV = maximum();
-      int next = minV;
-      if (orientation() == Qt::Horizontal) {
-        const int w = width();
-        if (w > 1) next = QStyle::sliderValueFromPosition(minV, maxV, event->pos().x(), w - 1);
-      } else {
-        const int h = height();
-        if (h > 1) next = QStyle::sliderValueFromPosition(minV, maxV, h - 1 - event->pos().y(), h - 1);
-      }
-      setValue(next);
-      event->accept();
-      return;
-    }
-    QSlider::mousePressEvent(event);
-  }
-};
-
-class TitleBarWidget : public QWidget {
-public:
-  explicit TitleBarWidget(QWidget* parent=nullptr) : QWidget(parent) {}
-
-  std::function<void(const QPoint&)> onDragMove;
-  std::function<void()> onToggleMaxRestore;
-
-protected:
-  void mousePressEvent(QMouseEvent* event) override {
-    if (event->button() == Qt::LeftButton) {
-      dragging_ = true;
-      dragOffset_ = event->globalPos() - window()->frameGeometry().topLeft();
-      event->accept();
-      return;
-    }
-    QWidget::mousePressEvent(event);
-  }
-
-  void mouseMoveEvent(QMouseEvent* event) override {
-    if (dragging_ && (event->buttons() & Qt::LeftButton) && onDragMove) {
-      onDragMove(event->globalPos() - dragOffset_);
-      event->accept();
-      return;
-    }
-    QWidget::mouseMoveEvent(event);
-  }
-
-  void mouseReleaseEvent(QMouseEvent* event) override {
-    dragging_ = false;
-    QWidget::mouseReleaseEvent(event);
-  }
-
-  void mouseDoubleClickEvent(QMouseEvent* event) override {
-    if (event->button() == Qt::LeftButton && onToggleMaxRestore) {
-      onToggleMaxRestore();
-      event->accept();
-      return;
-    }
-    QWidget::mouseDoubleClickEvent(event);
-  }
-
-private:
-  bool dragging_ = false;
-  QPoint dragOffset_;
-};
 
 
 ImageViewer::ImageViewer(QWidget* parent) : QGraphicsView(parent) {
@@ -202,6 +127,7 @@ void ImageViewer::mousePressEvent(QMouseEvent* e) {
       lineDrawing_ = true;
       lineStart_ = p;
       previewLine_ = scene_.addLine(QLineF(lineStart_, lineStart_), QPen(QColor(80,220,255), 2));
+      emit linePreviewText("Line: start");
     } else {
       scene_.addLine(QLineF(lineStart_, p), QPen(QColor(80,220,255), 2));
       if (previewLine_) {
@@ -241,15 +167,10 @@ MainWindow::MainWindow(const std::vector<InputSource>& sources,
     board_w_(board_w),
     board_h_(board_h),
     square_(square_m),
-    settings_("YourCompany", "Multi6DTracker")
+    settings_("YourCompany", "MultiCamRigToolkit")
 {
-    setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
-    setWindowTitle("Multi6DTracker");
-    if (QScreen* screen = QGuiApplication::primaryScreen()) {
-      setGeometry(screen->availableGeometry());
-    } else {
-      resize(1280, 800);
-    }
+    setWindowTitle("Multi-Camera Rig Toolkit (Qt)");
+    resize(1280, 800);
 
     calibrator_.reset(new MultiCamCalibrator(std::max(1,num_cams_), cv::Size(board_w_, board_h_), square_));
 
@@ -303,57 +224,9 @@ MainWindow::~MainWindow()
 }
 
 void MainWindow::buildUI() {
-    // Top title bar spans the full QMainWindow width (including dock area)
-    TitleBarWidget* titleBar = new TitleBarWidget(this);
-    titleBar->setObjectName("customTitleBar");
-    titleBar->setFixedHeight(34);
-    QHBoxLayout* titleLayout = new QHBoxLayout(titleBar);
-    titleLayout->setContentsMargins(10, 0, 0, 0);
-    titleLayout->setSpacing(6);
-
-    QLabel* titleText = new QLabel("Multi6DTracker", titleBar);
-    titleText->setStyleSheet("color:#c7d2df;font-weight:600;");
-    titleLayout->addWidget(titleText);
-    titleLayout->addStretch(1);
-
-    auto makeTitleBtn = [titleBar](const QString& text, const QString& objName) {
-      QToolButton* b = new QToolButton(titleBar);
-      b->setObjectName(objName);
-      b->setText(text);
-      b->setFixedSize(46, 34);
-      return b;
-    };
-
-    QToolButton* btnMin = makeTitleBtn("-", "titleMinBtn");
-    QToolButton* btnMax = makeTitleBtn("[]", "titleMaxBtn");
-    QToolButton* btnClose = makeTitleBtn("X", "titleCloseBtn");
-    titleLayout->addWidget(btnMin);
-    titleLayout->addWidget(btnMax);
-    titleLayout->addWidget(btnClose);
-
-    titleBar->setStyleSheet(
-      "#customTitleBar{background:#1f232b;border-bottom:1px solid #3a4250;}"
-      "QToolButton{background:#2b3340;color:#cfd8e3;border:none;border-left:1px solid #4b586d;border-radius:0;font-size:12px;}"
-      "QToolButton:hover{background:#374255;}"
-      "QToolButton#titleCloseBtn:hover{background:#b42318;color:#ffffff;}");
-
-    connect(btnMin, &QToolButton::clicked, this, &QWidget::showMinimized);
-    connect(btnClose, &QToolButton::clicked, this, &QWidget::close);
-    connect(btnMax, &QToolButton::clicked, this, [this]() {
-      isMaximized() ? showNormal() : showMaximized();
-    });
-    titleBar->onToggleMaxRestore = [this]() {
-      isMaximized() ? showNormal() : showMaximized();
-    };
-    titleBar->onDragMove = [this](const QPoint& p) {
-      if (!isMaximized()) move(p);
-    };
-    setMenuWidget(titleBar);
-
+    // Central view
     QWidget* central = new QWidget(this);
-    QHBoxLayout* root = new QHBoxLayout();
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+    QHBoxLayout* root = new QHBoxLayout(central);
 
     QWidget* sideBar = new QWidget(central);
     sideBar->setObjectName("leftSidebar");
@@ -362,7 +235,7 @@ void MainWindow::buildUI() {
     sv->setContentsMargins(6, 8, 6, 8);
     sv->setSpacing(10);
 
-    QLabel* appTitle = new QLabel("Multi6DTracker", sideBar);
+    QLabel* appTitle = new QLabel("MCToolkit", sideBar);
     appTitle->setObjectName("sidebarTitle");
     appTitle->setWordWrap(true);
     appTitle->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
@@ -407,7 +280,7 @@ void MainWindow::buildUI() {
     root->addWidget(sideBar);
     sideBar->setStyleSheet(
       "#leftSidebar{background:#1f232b;border-right:1px solid #4a5568;}"
-      "#sidebarTitle{font-size:11px;font-weight:600;color:#b8c4d6;padding:4px 4px;line-height:1.1;}"
+      "#sidebarTitle{font-size:12px;font-weight:700;color:#f4f7fb;padding:4px 4px;line-height:1.1;}"
       "QTabBar::tab{background:transparent;color:#c8d0da;padding:4px 4px;text-align:left;border-radius:6px;margin:2px 0;min-width:44px;}"
       "QTabBar::tab:selected{background:#3b82f6;color:white;font-weight:600;}"
       "QTabBar::tab:hover:!selected{background:#2a3140;color:#f0f4f8;}"
@@ -490,7 +363,7 @@ void MainWindow::buildUI() {
     playProgressRow->addWidget(btnStepPrev_);
     playProgressRow->addWidget(btnStepNext_);
     playProgressRow->addSpacing(10);
-    progressSlider_ = new ClickJumpSlider(Qt::Horizontal, central);
+    progressSlider_ = new QSlider(Qt::Horizontal, central);
     progressSlider_->setRange(0, 0);
     progressSlider_->setSingleStep(1);
     progressSlider_->setPageStep(30);
@@ -505,9 +378,8 @@ void MainWindow::buildUI() {
     v->addLayout(playProgressRow);
 
     root->addWidget(mainPane, 1);
-    central->setLayout(root);
     setCentralWidget(central);
-    //menuBar()->hide();
+    menuBar()->hide();
 
     connect(btnAddCam_, &QToolButton::clicked, this, &MainWindow::onAddCamera);
     connect(btnAddVideo_, &QToolButton::clicked, this, &MainWindow::onAddVideo);
@@ -518,10 +390,6 @@ void MainWindow::buildUI() {
     connect(btnStepPrev_, &QToolButton::clicked, this, &MainWindow::onStepPrevFrame);
     connect(btnStepNext_, &QToolButton::clicked, this, &MainWindow::onStepNextFrame);
     connect(progressSlider_, &QSlider::sliderReleased, this, &MainWindow::onProgressSliderReleased);
-    connect(progressSlider_, &QSlider::valueChanged, this, [this](int) {
-      if (!progressSlider_ || progressSlider_->isSliderDown()) return;
-      onProgressSliderReleased();
-    });
     connect(editCurFrame_, &QLineEdit::returnPressed, this, &MainWindow::onFrameJumpReturnPressed);
     QMenu* fileMenu = new QMenu(btnFileMenu_);
     QAction* actAbout = fileMenu->addAction("Software Info");
@@ -531,17 +399,15 @@ void MainWindow::buildUI() {
     btnFileMenu_->setMenu(fileMenu);
     connect(actAbout, &QAction::triggered, this, [this](){
       QMessageBox::information(this, "Software Info",
-                               "Multi6DTracker\n\nCapture / Calibration / Tracking workflow.");
+                               "Multi-Cam6DPoseTracker\n\nCapture / Calibration / Tracking workflow.");
     });
     connect(actSaveProject_, &QAction::triggered, this, &MainWindow::onSaveProject);
     connect(actLoadProject_, &QAction::triggered, this, &MainWindow::onLoadProject);
     connect(sideModeTabs_, &QTabBar::currentChanged, this, &MainWindow::onModeTabChanged);
 
-    // Right actions panel (embedded in central layout to keep top bar full-width)
-    QWidget* dock = new QWidget(central);
-    dock->setObjectName("actionsPanel");
-    dock->setMinimumWidth(320);
-    dock->setMaximumWidth(420);
+    // Right dock: actions + log
+    QDockWidget* dock = new QDockWidget("Actions", this);
+    dock->setAllowedAreas(Qt::RightDockWidgetArea | Qt::LeftDockWidgetArea);
 
     QWidget* dockw = new QWidget(dock);
     QVBoxLayout* dv = new QVBoxLayout(dockw);
@@ -676,10 +542,8 @@ void MainWindow::buildUI() {
     gbParams->setLayout(tg);
 
     lblFps_ = new QLabel("FPS: 0", tabTrk);
-    btnDetectAll_ = new QPushButton("Detect All Frames", tabTrk);
+    btnPrintPose_ = new QPushButton("Print Pose to Log", tabTrk);
     lblInliers_ = new QLabel("Inliers: 0", tabTrk);
-    lblPose_ = new QLabel("Pose: -", tabTrk);
-    lblPose_->setWordWrap(true);
 
     trkv->addWidget(btnLoadTag_);
     lblTagPath_ = new QLabel("TagMap: (none)", tabTrk);
@@ -689,11 +553,10 @@ void MainWindow::buildUI() {
     trkv->addWidget(lblYamlPath_);
     trkv->addWidget(gbParams);
     trkv->addWidget(chkPose_);
-    trkv->addWidget(btnDetectAll_);
+    trkv->addWidget(btnPrintPose_);
     btnExportTraj_ = new QPushButton("Export Trajectory CSV", tabTrk);
     trkv->addWidget(btnExportTraj_);
     trkv->addWidget(lblInliers_);
-    trkv->addWidget(lblPose_);
     lblTrajPosPlot_ = new QLabel(tabTrk);
     lblTrajPosPlot_->setMinimumHeight(160);
     lblTrajPosPlot_->setAlignment(Qt::AlignCenter);
@@ -713,7 +576,7 @@ void MainWindow::buildUI() {
     connect(btnLoadTag_, &QPushButton::clicked, this, &MainWindow::onLoadTagMap);
     connect(btnLoadYaml_, &QPushButton::clicked, this, &MainWindow::onLoadCalibYaml);
     connect(chkPose_, &QCheckBox::toggled, this, &MainWindow::onTogglePose);
-    connect(btnDetectAll_, &QPushButton::clicked, this, &MainWindow::onDetectAllTrackingFrames);
+    connect(btnPrintPose_, &QPushButton::clicked, this, &MainWindow::onPrintPose);
     connect(btnExportTraj_, &QPushButton::clicked, this, &MainWindow::onExportTrajectory);
     connect(spRansacIters_, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int v){ ransac_iters_=v; if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, pose_on_); });
     connect(spInlierThresh_, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double v){ inlier_thresh_px_=v; if(solveWorker_) solveWorker_->setParams(ransac_iters_, inlier_thresh_px_, tag_dict_id_, pose_on_); });
@@ -734,13 +597,8 @@ void MainWindow::buildUI() {
     dv->addWidget(log_);
 
     dockw->setLayout(dv);
-    QVBoxLayout* panelLayout = new QVBoxLayout(dock);
-    panelLayout->setContentsMargins(0,0,0,0);
-    panelLayout->addWidget(dockw);
-    dock->setLayout(panelLayout);
-    dock->setStyleSheet("#actionsPanel{background:#222831;border-left:1px solid #3a4250;}");
-
-    root->addWidget(dock);
+    dock->setWidget(dockw);
+    addDockWidget(Qt::RightDockWidgetArea, dock);
 
     lblResolution_ = new QLabel("Resolution: -", this);
     statusBar()->addPermanentWidget(lblResolution_);
@@ -827,6 +685,11 @@ void MainWindow::rebuildSourceViews() {
   }
 
   int cols = (n <= 1) ? 1 : 2;
+  auto themedIcon = [this](const QString& name, QStyle::StandardPixmap sp) {
+    QIcon icon = QIcon::fromTheme(name);
+    if (icon.isNull()) icon = style()->standardIcon(sp);
+    return icon;
+  };
 
   for (int i=0; i<n; ++i) {
     QWidget* panel = new QWidget(viewsHost_);
@@ -835,47 +698,42 @@ void MainWindow::rebuildSourceViews() {
     pv->setContentsMargins(4,4,4,4);
     pv->setSpacing(4);
 
-    //QToolButton* panBtn = new QToolButton(panel);
+    QToolButton* panBtn = new QToolButton(panel);
     QToolButton* pointBtn = new QToolButton(panel);
     QToolButton* lineBtn = new QToolButton(panel);
     QToolButton* zoomInBtn = new QToolButton(panel);
     QToolButton* zoomOutBtn = new QToolButton(panel);
     QToolButton* resetBtn = new QToolButton(panel);
-   // QToolButton* clearBtn = new QToolButton(panel);
+    QToolButton* clearBtn = new QToolButton(panel);
 
-    QSize btnIconSize(24, 24);
-    pointBtn->setIcon(QIcon(":/icons/Point.png"));
-    pointBtn->setIconSize(btnIconSize);
-    lineBtn->setIcon(QIcon(":/icons/Line.png"));
-    lineBtn->setIconSize(btnIconSize);
-    zoomInBtn->setIcon(QIcon(":/icons/Zoom-.png"));
-    zoomInBtn->setIconSize(btnIconSize);
-    zoomOutBtn->setIcon(QIcon(":/icons/Zoom+.png"));
-    zoomOutBtn->setIconSize(btnIconSize);
-    resetBtn->setIcon(QIcon(":/icons/Auto.png"));
-    resetBtn->setIconSize(btnIconSize);
+    panBtn->setIcon(themedIcon("transform-move", QStyle::SP_ArrowUp));
+    pointBtn->setIcon(themedIcon("draw-freehand", QStyle::SP_DialogYesButton));
+    lineBtn->setIcon(themedIcon("draw-line", QStyle::SP_LineEditClearButton));
+    zoomInBtn->setIcon(themedIcon("zoom-in", QStyle::SP_FileDialogDetailedView));
+    zoomOutBtn->setIcon(themedIcon("zoom-out", QStyle::SP_FileDialogListView));
+    resetBtn->setIcon(themedIcon("zoom-fit-best", QStyle::SP_BrowserReload));
+    clearBtn->setIcon(themedIcon("edit-clear", QStyle::SP_TrashIcon));
 
-
-   // panBtn->setCheckable(true);
+    panBtn->setCheckable(true);
     pointBtn->setCheckable(true);
     lineBtn->setCheckable(true);
-    //panBtn->setChecked(true);
+    panBtn->setChecked(true);
 
-    //panBtn->setText("Pan");
+    panBtn->setText("Pan");
     pointBtn->setText("Point");
     lineBtn->setText("Line");
     zoomInBtn->setText("Zoom+");
     zoomOutBtn->setText("Zoom-");
     resetBtn->setText("Reset");
-   // clearBtn->setText("Clear");
+    clearBtn->setText("Clear");
 
-   // panBtn->setToolTip("Pan view");
+    panBtn->setToolTip("Pan view");
     pointBtn->setToolTip("Draw point");
     lineBtn->setToolTip("Draw line");
     zoomInBtn->setToolTip("Zoom in");
     zoomOutBtn->setToolTip("Zoom out");
     resetBtn->setToolTip("Reset view");
-   // clearBtn->setToolTip("Clear drawings");
+    clearBtn->setToolTip("Clear drawings");
 
     QWidget* canvas = new QWidget(panel);
     QGridLayout* overlay = new QGridLayout(canvas);
@@ -889,7 +747,7 @@ void MainWindow::rebuildSourceViews() {
     QHBoxLayout* tb = new QHBoxLayout(topBar);
     tb->setContentsMargins(6,0,6,6);
     tb->setSpacing(2);
-    for (QToolButton* b : {pointBtn, lineBtn, zoomInBtn, zoomOutBtn, resetBtn}) {
+    for (QToolButton* b : {panBtn, pointBtn, lineBtn, zoomInBtn, zoomOutBtn, resetBtn, clearBtn}) {
       b->setAutoRaise(true);
       b->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
       tb->addWidget(b);
@@ -899,38 +757,38 @@ void MainWindow::rebuildSourceViews() {
     ImageViewer* v = new ImageViewer(canvas);
     v->setMinimumSize(480, 270);
     v->setToolMode(ImageViewer::PanTool);
-    //connect(panBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
-    //  panBtn->setChecked(true); pointBtn->setChecked(false); lineBtn->setChecked(false);
-    //  v->setToolMode(ImageViewer::PanTool);
-    //});
-    connect(pointBtn, &QToolButton::clicked, this, [v, pointBtn, lineBtn]() {
-      pointBtn->setChecked(true); lineBtn->setChecked(false);
+    connect(panBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
+      panBtn->setChecked(true); pointBtn->setChecked(false); lineBtn->setChecked(false);
+      v->setToolMode(ImageViewer::PanTool);
+    });
+    connect(pointBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
+      panBtn->setChecked(false); pointBtn->setChecked(true); lineBtn->setChecked(false);
       v->setToolMode(ImageViewer::PointTool);
     });
-    connect(lineBtn, &QToolButton::clicked, this, [v, pointBtn, lineBtn]() {
-      pointBtn->setChecked(false); lineBtn->setChecked(true);
+    connect(lineBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
+      panBtn->setChecked(false); pointBtn->setChecked(false); lineBtn->setChecked(true);
       v->setToolMode(ImageViewer::LineTool);
     });
-    connect(zoomInBtn, &QToolButton::clicked, this, [v, pointBtn, lineBtn]() {
-      pointBtn->setChecked(false); lineBtn->setChecked(false);
+    connect(zoomInBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
+      panBtn->setChecked(true); pointBtn->setChecked(false); lineBtn->setChecked(false);
       v->setToolMode(ImageViewer::PanTool);
       v->zoomIn();
     });
-    connect(zoomOutBtn, &QToolButton::clicked, this, [v, pointBtn, lineBtn]() {
-     pointBtn->setChecked(false); lineBtn->setChecked(false);
+    connect(zoomOutBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
+      panBtn->setChecked(true); pointBtn->setChecked(false); lineBtn->setChecked(false);
       v->setToolMode(ImageViewer::PanTool);
       v->zoomOut();
     });
-    connect(resetBtn, &QToolButton::clicked, this, [v, pointBtn, lineBtn]() {
-      pointBtn->setChecked(false); lineBtn->setChecked(false);
+    connect(resetBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
+      panBtn->setChecked(true); pointBtn->setChecked(false); lineBtn->setChecked(false);
       v->setToolMode(ImageViewer::PanTool);
       v->resetView();
     });
-    //connect(clearBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
-    //  panBtn->setChecked(true); pointBtn->setChecked(false); lineBtn->setChecked(false);
-    //  v->setToolMode(ImageViewer::PanTool);
-    //  v->clearAnnotations();
-    //});
+    connect(clearBtn, &QToolButton::clicked, this, [v, panBtn, pointBtn, lineBtn]() {
+      panBtn->setChecked(true); pointBtn->setChecked(false); lineBtn->setChecked(false);
+      v->setToolMode(ImageViewer::PanTool);
+      v->clearAnnotations();
+    });
 
     overlay->addWidget(v, 0, 0);
     overlay->addWidget(topBar, 0, 0, Qt::AlignBottom | Qt::AlignLeft);
@@ -990,7 +848,6 @@ void MainWindow::rebuildCalibratorFromUI(bool reset) {
 
 // ---------------- Sources actions ----------------
 void MainWindow::onAddCamera() {
-  detect_overlay_cache_.clear();
   bool ok=false;
   int camId = QInputDialog::getInt(this, "Add Camera", "Camera index:", 0, 0, 64, 1, &ok);
   if (!ok) return;
@@ -1039,7 +896,6 @@ void MainWindow::onAddCamera() {
 
 void MainWindow::onAddVideo() 
 {
-    detect_overlay_cache_.clear();
     QString last = settings_.value("lastVideoDir", "").toString();
     QString path = QFileDialog::getOpenFileName(this, "Add Video", last,"Video (*.mp4 *.avi *.mov *.mkv);;All (*.*)");
     if (path.isEmpty()) return;
@@ -1095,7 +951,6 @@ void MainWindow::onAddVideo()
 
 void MainWindow::onAddImageSequence()
 {
-    detect_overlay_cache_.clear();
     QString last = settings_.value("lastImageSeqDir", "").toString();
     QString dir = QFileDialog::getExistingDirectory(this, "Add Image Sequence Folder", last);
     if (dir.isEmpty()) return;
@@ -1149,19 +1004,15 @@ void MainWindow::onAddImageSequence()
 }
 
 void MainWindow::onRemoveSource() {
-  detect_overlay_cache_.clear();
-  int removed = 0;
-  timer_.stop();
-  if (captureWorker_) QMetaObject::invokeMethod(captureWorker_, "stop", Qt::BlockingQueuedConnection);
-
+  int row = -1;
   for (int i=(int)sources_.size()-1; i>=0; --i) {
-    if (sources_[i].mode_owner != (int)mode_) continue;
-    if (sources_[i].cap.isOpened()) sources_[i].cap.release();
-    sources_.erase(sources_.begin() + i);
-    ++removed;
+    if (sources_[i].mode_owner == (int)mode_) { row = i; break; }
   }
-  if (removed <= 0) return;
+  if (row < 0 || row >= (int)sources_.size()) return;
 
+  timer_.stop();
+  if (sources_[row].cap.isOpened()) sources_[row].cap.release();
+  sources_.erase(sources_.begin() + row);
   num_cams_ = (int)sources_.size();
   source_enabled_.assign(std::max(0,num_cams_), true);
   // last_frames_ will be populated by CaptureWorker when frames arrive.
@@ -1171,9 +1022,7 @@ void MainWindow::onRemoveSource() {
   refreshSourceList();
   if (show_docks_) rebuildSourceDocks();
   rebuildSourceViews();
-  updateSourceViews(last_frames_);
-  updateStatus();
-  logLine(QString("Removed %1 source(s) in current mode.").arg(removed));
+  logLine("Removed source.");
 }
 
 void MainWindow::onModeCalibration() {
@@ -1400,8 +1249,23 @@ void MainWindow::onTick() {
       //logLine(QString(\"Sources changed -> rebuild calibrator (num=%1)\").arg(num_cams_));
     }
   }
-  // Tracking overlay is triggered by the explicit Detect button to avoid
-  // repeatedly accumulating visual detections on static frames.
+    // Heavy overlay (chessboard / tag detection) throttled to keep UI responsive
+  // Heavy overlay (AprilTag/chessboard detection) can block UI and cause stutter.
+  // NOTE: playback_running_ is only true for the sync Play button path, but sources may
+  // still be actively reading via Pause/Resume flow. Detect active sources directly.
+  //bool anySourceRunning = false;
+  //{
+  //  QMutexLocker lock(&sources_mutex_);
+  //  for (bool en : source_enabled_) {
+  //    if (en) { anySourceRunning = true; break; }
+  //  }
+  //}
+  //const int overlayDiv = anySourceRunning ? std::max(ui_overlay_div_, 12) : ui_overlay_div_;
+  //ui_frame_skip_ = (ui_frame_skip_ + 1) % overlayDiv;
+  //if (ui_frame_skip_ == 0) {
+  //  if (mode_==CALIB) overlayCalibration(vis, frames);
+  //  else overlayTracking(vis, frames);
+  //}
 
   updateSourceViews(vis);
 
@@ -1625,7 +1489,6 @@ void MainWindow::onComputeCalibration() {
   if (lblCalibProgress_) lblCalibProgress_->setText("Progress: preparing...");
 
   stopCaptureBlocking();
-  detect_overlay_cache_.clear();
 
   int totalFrames = 0;
   {
@@ -1880,145 +1743,16 @@ void MainWindow::onTogglePose(bool on) {
   logLine(QString("Pose estimation %1").arg(on ? "ON" : "OFF"));
 }
 
-void MainWindow::onDetectAllTrackingFrames() {
-  if (mode_ != TRACK) {
-    QMessageBox::information(this, "Tracking", "Switch to Tracking mode first.");
-    return;
-  }
-  if (!tagmap_loaded_) {
-    QMessageBox::warning(this, "Tracking", "Load Tag Map first.");
-    return;
-  }
-
-  std::vector<int> idx;
-  {
-    QMutexLocker lock(&sources_mutex_);
-    for (int i = 0; i < (int)sources_.size(); ++i) {
-      if (sources_[i].mode_owner == (int)TRACK && !sources_[i].is_cam) idx.push_back(i);
-    }
-  }
-  if (idx.empty()) {
-    QMessageBox::warning(this, "Tracking", "No video/image-sequence sources found in Tracking mode.");
-    return;
-  }
-
-  stopCaptureBlocking();
-  detect_overlay_cache_.clear();
-
-  int totalFrames = 0;
-  {
-    QMutexLocker lock(&sources_mutex_);
-    auto frameCount = [&](const InputSource& s)->int {
-      if (s.is_image_seq) return s.seq_files.size();
-      if (!s.cap.isOpened()) return 0;
-      return std::max(0, (int)s.cap.get(cv::CAP_PROP_FRAME_COUNT));
-    };
-    totalFrames = INT_MAX;
-    for (int k : idx) {
-      if (sources_[k].is_image_seq) sources_[k].seq_idx = 0;
-      else if (sources_[k].cap.isOpened()) sources_[k].cap.set(cv::CAP_PROP_POS_FRAMES, 0);
-      int c = frameCount(sources_[k]);
-      if (c > 0) totalFrames = std::min(totalFrames, c);
-    }
-    if (totalFrames == INT_MAX) totalFrames = 0;
-  }
-
-  if (calibProgressBar_) {
-    calibProgressBar_->setRange(0, totalFrames > 0 ? totalFrames : 0);
-    calibProgressBar_->setValue(0);
-  }
-  if (lblCalibProgress_) lblCalibProgress_->setText("Progress: tracking detect...");
-
-  auto readNext = [](InputSource& s, cv::Mat& out)->bool {
-    if (s.is_image_seq) {
-      if (s.seq_files.isEmpty() || s.seq_idx >= s.seq_files.size()) return false;
-      out = cv::imread(s.seq_files[s.seq_idx].toStdString(), cv::IMREAD_COLOR);
-      s.seq_idx++;
-      return !out.empty();
-    }
-    if (!s.cap.isOpened()) return false;
-    return s.cap.read(out) && !out.empty();
-  };
-
-  int processed = 0;
-  int framesWithDetections = 0;
-  int poseOkCount = 0;
-
-  while (true) {
-    std::vector<cv::Mat> frames(idx.size());
-    {
-      QMutexLocker lock(&sources_mutex_);
-      bool ok = true;
-      for (int i = 0; i < (int)idx.size(); ++i) {
-        if (!readNext(sources_[idx[i]], frames[i])) { ok = false; break; }
-      }
-      if (!ok) break;
-    }
-
-    std::vector<cv::Mat> vis = frames;
-    AprilTagDetections det;
-    std::vector<Observation> obs;
-    buildObservationsFromFrames(frames, tag_corner_map_, obs, &det, tag_dict_id_);
-
-    bool hasDet = false;
-    for (int i = 0; i < (int)vis.size(); ++i) {
-      if (i < (int)det.ids_per_cam.size() && !det.ids_per_cam[i].empty()) hasDet = true;
-      if (i < (int)det.ids_per_cam.size()) {
-        cv::aruco::drawDetectedMarkers(vis[i], det.corners_per_cam[i], det.ids_per_cam[i]);
-      }
-      cv::putText(vis[i], "cam" + std::to_string(i), cv::Point(15,30),
-                  cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0,255,0), 2, cv::LINE_AA);
-    }
-    if (hasDet) framesWithDetections++;
-
-    if (pose_on_ && (int)cams_.size() == (int)frames.size() && obs.size() >= 3) {
-      auto res = estimatePoseRansac(cams_, obs, R_wr_, t_wr_, ransac_iters_, inlier_thresh_px_);
-      if (res.ok) {
-        R_wr_ = res.R_wr;
-        t_wr_ = res.t_wr;
-        Eigen::AngleAxisd aa(res.R_wr);
-        Eigen::Vector3d aavec = aa.axis() * aa.angle();
-        last_inliers_ = (int)res.inliers.size();
-        traj_.push_back(TrajRow{QDateTime::currentMSecsSinceEpoch(), t_wr_, aavec, last_inliers_});
-        poseOkCount++;
-        if (lblPose_) {
-          lblPose_->setText(QString("Pose t=[%1, %2, %3], aa=[%4, %5, %6], inliers=%7")
-                            .arg(t_wr_.x(),0,'f',4).arg(t_wr_.y(),0,'f',4).arg(t_wr_.z(),0,'f',4)
-                            .arg(aavec.x(),0,'f',4).arg(aavec.y(),0,'f',4).arg(aavec.z(),0,'f',4)
-                            .arg(last_inliers_));
-        }
-      }
-    }
-
-    for (int i = 0; i < (int)idx.size(); ++i) {
-      detect_overlay_cache_[idx[i]][processed] = vis[i];
-    }
-
-    std::vector<cv::Mat> uiFrames;
-    {
-      QMutexLocker frameLock(&frames_mutex_);
-      if ((int)last_frames_.size() < (int)sources_.size()) last_frames_.resize(sources_.size());
-      for (int i = 0; i < (int)idx.size(); ++i) last_frames_[idx[i]] = vis[i];
-      uiFrames = last_frames_;
-    }
-    updateSourceViews(uiFrames);
-    refreshTrajectoryPlot();
-
-    processed++;
-    if (calibProgressBar_) calibProgressBar_->setValue(processed);
-    if (lblCalibProgress_) {
-      lblCalibProgress_->setText(QString("Progress: tracking detect %1 / %2 | det=%3 | pose=%4")
-                                 .arg(processed)
-                                 .arg(std::max(processed, totalFrames))
-                                 .arg(framesWithDetections)
-                                 .arg(poseOkCount));
-    }
-    QApplication::processEvents();
-  }
-
-  logLine(QString("Detect All finished. processed=%1 detFrames=%2 poseOK=%3")
-          .arg(processed).arg(framesWithDetections).arg(poseOkCount));
+void MainWindow::onPrintPose() {
+  Eigen::AngleAxisd aa(R_wr_);
+  QString s = QString("POSE t=[%1,%2,%3] ang=%4 axis=[%5,%6,%7] inliers=%8")
+    .arg(t_wr_.x(),0,'f',6).arg(t_wr_.y(),0,'f',6).arg(t_wr_.z(),0,'f',6)
+    .arg(aa.angle(),0,'f',6)
+    .arg(aa.axis().x(),0,'f',6).arg(aa.axis().y(),0,'f',6).arg(aa.axis().z(),0,'f',6)
+    .arg(last_inliers_);
+  logLine(s);
 }
+
 
 // ----------------- Sources: pause/resume -----------------
 void MainWindow::onPauseResumeSelected() {
@@ -2139,6 +1873,21 @@ void MainWindow::onFramesFromWorker(FramePack frames, qint64 capture_ts_ms) {
   }
 }
 
+void MainWindow::onPoseFromWorker(const PoseResult& r) {
+  if (r.ok) {
+    t_wr_ = Eigen::Vector3d(r.t[0], r.t[1], r.t[2]);
+    Eigen::Vector3d aavec(r.aa[0], r.aa[1], r.aa[2]);
+    double angle = aavec.norm();
+    Eigen::Vector3d axis = (angle < 1e-12) ? Eigen::Vector3d(1,0,0) : (aavec/angle);
+    R_wr_ = Eigen::AngleAxisd(angle, axis).toRotationMatrix();
+    last_inliers_ = r.inliers;
+    traj_.push_back(TrajRow{ r.solve_ts_ms, t_wr_, aavec, r.inliers });
+  }
+  if (lblLatency_) lblLatency_->setText(QString("Latency: %1 ms (obs=%2)")
+                                       .arg(r.latency_ms,0,'f',1).arg(r.obs_count));
+  refreshTrajectoryPlot();
+}
+
 void MainWindow::refreshTrajectoryPlot() {
   if (!lblTrajPosPlot_ || !lblTrajAngPlot_) return;
 
@@ -2238,32 +1987,6 @@ void MainWindow::refreshTrajectoryPlot() {
            {"aa_x", "aa_y", "aa_z"},
            {QColor(255,179,71), QColor(186,104,200), QColor(121,134,203)},
            [](const TrajRow& r, int k){ return k==0 ? r.aa.x() : (k==1 ? r.aa.y() : r.aa.z()); });
-}
-
-
-void MainWindow::onPoseFromWorker(const PoseResult& r) {
-  if (r.ok) {
-    t_wr_ = Eigen::Vector3d(r.t[0], r.t[1], r.t[2]);
-    Eigen::Vector3d aavec(r.aa[0], r.aa[1], r.aa[2]);
-    double angle = aavec.norm();
-    Eigen::Vector3d axis = (angle < 1e-12) ? Eigen::Vector3d(1,0,0) : (aavec/angle);
-    R_wr_ = Eigen::AngleAxisd(angle, axis).toRotationMatrix();
-    last_inliers_ = r.inliers;
-    traj_.push_back(TrajRow{ r.solve_ts_ms, t_wr_, aavec, r.inliers });
-  }
-  if (lblLatency_) lblLatency_->setText(QString("Latency: %1 ms (obs=%2)")
-                                       .arg(r.latency_ms,0,'f',1).arg(r.obs_count));
-  if (lblPose_) {
-    if (r.ok) {
-      lblPose_->setText(QString("Pose t=[%1, %2, %3], aa=[%4, %5, %6], inliers=%7")
-                        .arg(r.t[0],0,'f',4).arg(r.t[1],0,'f',4).arg(r.t[2],0,'f',4)
-                        .arg(r.aa[0],0,'f',4).arg(r.aa[1],0,'f',4).arg(r.aa[2],0,'f',4)
-                        .arg(r.inliers));
-    } else {
-      lblPose_->setText("Pose: no valid solution");
-    }
-  }
-  refreshTrajectoryPlot();
 }
 
 void MainWindow::rebuildSourceDocks() {
@@ -2441,15 +2164,6 @@ void MainWindow::stepAllVideos(int delta) {
         src.cap.read(f);
       }
       if (!f.empty()) {
-        // If Detect-All generated a visualized frame for this source/frame, reuse it
-        // so marker overlays remain persistent when stepping prev/next.
-        auto srcIt = detect_overlay_cache_.find(i);
-        if (srcIt != detect_overlay_cache_.end()) {
-          auto frameIt = srcIt->second.find(target);
-          if (frameIt != srcIt->second.end() && !frameIt->second.empty()) {
-            f = frameIt->second;
-          }
-        }
         steppedFrames[i] = f;
         progressFrame = target;
         stepped = true;
@@ -2458,20 +2172,15 @@ void MainWindow::stepAllVideos(int delta) {
   }
 
   if (stepped) {
-    std::vector<cv::Mat> uiFrames;
     {
       QMutexLocker frameLock(&frames_mutex_);
       if ((int)last_frames_.size() != (int)steppedFrames.size()) last_frames_.resize(steppedFrames.size());
       for (int i=0;i<(int)steppedFrames.size();++i) {
         if (!steppedFrames[i].empty()) last_frames_[i] = steppedFrames[i];
       }
-      uiFrames = last_frames_;
     }
     play_frame_ = progressFrame;
     updateProgressUI(play_frame_, play_end_frame_);
-    updateSourceViews(uiFrames);
-    if (show_docks_) updateSourceDocks(uiFrames);
-    updateStatus();
     logLine(QString("Step frame: %1").arg(delta > 0 ? "next" : "prev"));
   } else {
     logLine("Step frame ignored: no video source ready.");
