@@ -89,6 +89,7 @@ private:
 };
 
 class MainWindow : public QMainWindow {
+    Q_OBJECT
 public:
   MainWindow(const std::vector<InputSource>& sources,
              int board_w, int board_h, double square_m,
